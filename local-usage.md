@@ -8,11 +8,11 @@ See the [index](index.md) for the full provider reference.
 ## 1. Install the provider
 
 ```sh
-./terraform-provider-jitguard/scripts/download-provider.sh
+./scripts/download-provider.sh
 ```
 
-This fetches the latest provider from the hosted mirror
-(`https://jitguard.com/terraform/`), verifies its hash, and
+This fetches the provider from the GitHub Releases for
+`barneyparker/terraform-provider-jitguard`, verifies its SHA256 checksum, and
 installs it to:
 
 ```
@@ -23,7 +23,7 @@ installs it to:
 `.terraformrc` needed. Pass a version to install something specific:
 
 ```sh
-./terraform-provider-jitguard/scripts/download-provider.sh 0.2.0
+./scripts/download-provider.sh 0.2.0
 ```
 
 ## 2. Create an API key
@@ -91,8 +91,9 @@ rm -rf ~/.terraform.d/plugins/registry.terraform.io/barneyparker/jitguard
 
 ## Troubleshooting
 
-- **`Could not retrieve the list of available versions`** — the mirror
-  requires HTTPS; make sure `MIRROR_URL` (if set) uses `https://`.
+- **`Could not retrieve the list of available versions`** — the release tag or
+  asset name doesn't match; check the tags on
+  `github.com/barneyparker/terraform-provider-jitguard/releases`.
 - **`no available releases match`** — you asked for a version that isn't
   published yet; run `./scripts/download-provider.sh` to confirm what's
   current, or bump your `required_providers` constraint.

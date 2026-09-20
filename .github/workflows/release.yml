@@ -1,0 +1,44 @@
+name: Release
+
+# Build and publish the provider as a GitHub Release.
+#
+# Run by pushing a version tag, e.g.:
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Assets: terraform-provider-jitguard_vX.Y.Z_{os}_{arch}.zip for
+# linux/darwin x amd64/arm64, plus SHA256SUMS. Install with
+# scripts/download-provider.sh.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build release artifacts
+        run: ./scripts/build-release.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/*.zip dist/SHA256SUMS \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

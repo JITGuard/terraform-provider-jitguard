@@ -28,30 +28,20 @@ API key, and writing your first configuration.
 
 ## Installation
 
-The provider is hosted as a Provider Network Mirror at
-`https://jitguard.com/terraform/` and served via CloudFront.
-
-Install it locally (recommended):
+The provider is published as GitHub Releases on
+`github.com/barneyparker/terraform-provider-jitguard`. It is not on the public
+Terraform Registry, so install it into Terraform's implicit filesystem mirror:
 
 ```sh
-./terraform-provider-jitguard/scripts/download-provider.sh
+./scripts/download-provider.sh
 ```
 
-This downloads the version, verifies its `h1:` hash, and installs the binary
-into the implicit filesystem-mirror location
+This downloads the release archive, verifies it against the release's
+`SHA256SUMS`, and installs the binary into the implicit filesystem-mirror
+location
 (`~/.terraform.d/plugins/registry.terraform.io/barneyparker/jitguard/<version>/<os>_<arch>/`),
-so `terraform init` finds it automatically.
-
-Or use the mirror directly over HTTPS from any machine — add a
-`network_mirror` to your Terraform CLI config (`.terraformrc`):
-
-```hcl
-provider_installation {
-  network_mirror {
-    url = "https://jitguard.com/terraform/"
-  }
-}
-```
+so `terraform init` finds it automatically. Pass a version with
+`./scripts/download-provider.sh 0.2.0`.
 
 ## Configuration
 

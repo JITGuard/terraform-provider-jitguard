@@ -1,0 +1,245 @@
+# Terraform Provider
+
+The Terraform Provider lets customers manage JIT Guard approval rules as code, through a Go-based custom provider that talks to the API-key-secured machine API. Without it, approval rules can only be managed via the web UI; the provider enables version-controlled, auditable, reproducible rule definitions aligned with infrastructure-as-code practices.
+
+The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework. It is not published to the Terraform Registry yet — customers install it from a network mirror hosted at `https://jitguard.com/terraform/` (S3 + CloudFront) or via a local filesystem mirror.
+
+## Boundaries
+
+### What belongs here
+
+- **Provider code**: the Terraform provider source — Go source, schemas, client, conversion logic
+- **Provider resources**: `jitguard_approval_rule` — full CRUD plus import
+- **Provider data sources**: `jitguard_approval_rules` — paginated list of all customer rules
+- **Provider config**: endpoint URL, API key, TLS skip-verify
+- **Client layer**: HTTP client with bearer auth, request/response handling, error mapping
+- **Distribution**: S3 bucket + CloudFront network mirror, publish/download scripts
+- **Reference documentation**: generated via `tfplugindocs`, served from the mirror
+
+### What does NOT belong here
+
+- The machine API lambda itself (`customer-rules-api` in the backend domain) — the provider is a *consumer* of that API
+- API key minting or lifecycle management (`customer-api-keys` lambda, web UI Keys section) — keys are created by the customer outside the provider
+- Approval rule evaluation logic (the rule engine in the backend domain) — the provider only defines rules, it never evaluates them
+- AWS infrastructure resources — the provider configures JIT Guard, not AWS
+- DynamoDB table design or access patterns — the provider is a pure HTTP client
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph "Customer workspace"
+        TF["Terraform CLI"]
+        HCL["Terraform config"]
+    end
+
+    subgraph "Terraform Provider (Go binary)"
+        P["jitguard provider\nplugin framework server"]
+        R["jitguard_approval_rule\nresource CRUD"]
+        DS["jitguard_approval_rules\ndata source"]
+        C["HTTP Client\n(bearer API key)"]
+        CONV["Conversion layer\nTerraform ↔ JSON"]
+        VAL["Cross-attribute\nvalidation"]
+    end
+
+    subgraph "JIT Guard platform"
+        GW["API Gateway\nstage: api"]
+        LRA["customer-rules-api\nlambda"]
+        DB[(DynamoDB\nmain table\nRULE# items)]
+        WK["Web UI\nKeys section"]
+    end
+
+    HCL --> TF
+    TF -->|"plugin protocol"| P
+    P --> R
+    P --> DS
+    R --> CONV
+    CONV --> C
+    R --> VAL
+    DS --> C
+    C -->|"Bearer bg_sk_..."| GW
+    GW -->|"HTTP route\n/api/customer/api/rules"| LRA
+    LRA -->|"requireApiKey guard\n(hash lookup)"| LRA
+    LRA -->|"CRUDL"| DB
+    WK -.->|"mint / revoke / disable"| DB
+```
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant TF as Terraform CLI
+    participant Prov as Provider
+    participant API as customer-rules-api
+    participant DB as DynamoDB
+
+    Dev->>TF: terraform apply
+    TF->>Prov: CRUD request
+    Prov->>Prov: ValidateConfig (cross-attr)
+    Prov->>API: POST/PUT/GET/DELETE (Bearer key)
+    API->>API: requireApiKey (hash lookup, env check)
+    API->>DB: Read/Write RULE# item
+    DB-->>API: Result
+    API-->>Prov: JSON response + ETag
+    Prov->>Prov: Convert JSON → Terraform types
+    Prov-->>TF: State update
+    TF-->>Dev: Apply complete
+```
+
+### Provider lifecycle
+
+The provider follows the standard Terraform plugin lifecycle:
+
+1. **Init** — Terraform fetches the provider binary (from the network mirror or local filesystem), starts the plugin process, and negotiates the protocol version.
+2. **Configure** — Terraform reads the provider block (`endpoint`, `api_key`, `skip_verify`), resolves the API key from config or environment variable, and constructs the shared HTTP client.
+3. **Plan** — For each resource/data source, the provider reads the current remote state (GET from the machine API) and compares it to the desired state in HCL. Cross-attribute validation runs before any API call.
+4. **Apply** — Creates, updates, or deletes resources via the machine API. Updates use full replacement with `If-Match` optimistic concurrency.
+5. **Refresh** — Periodically re-reads remote state to detect drift from external changes.
+
+### Machine API path
+
+The provider appends `/api/customer/api/rules` to the configured endpoint. The full public path is `/api/customer/api/rules` — the `api` segment is the API Gateway stage name, and `/customer/api/rules` is the gateway route. This path is distinct from the web UI's `/customer/rules` routes (which use JWT authentication), keeping the two auth models separate and testable.
+
+## Key Abstractions
+
+### Provider configuration
+
+Three attributes configure every JIT Guard provider instance:
+
+- **`endpoint`** (required) — the API base URL, allowing any environment (production, staging, local) to be targeted. This is the origin only; the provider appends the `/api/customer/api/rules` path.
+- **`api_key`** (optional, sensitive) — a `bg_sk_live_...` key minted in the web app. Falls back to the `JITGUARD_API_KEY` environment variable. Only a hash is stored server-side; a lost key must be revoked and re-created. The key format follows the `apikeys.guide` convention: `bg_sk_live_<secret>_<checksum>` with 256 bits of entropy.
+- **`skip_verify`** (optional) — disables TLS certificate verification for local testing against self-signed endpoints.
+
+During `Configure`, the provider constructs an HTTP client with the resolved endpoint, API key, and TLS settings. This client is shared by all resources and data sources. The client sets a `User-Agent` header (`jitguard-terraform-provider/<version>`) for server-side telemetry.
+
+### `jitguard_approval_rule` resource
+
+The primary resource. Full CRUD lifecycle plus `terraform import` by rule ID.
+
+Key attributes:
+- **`rule_id`** — server-assigned, immutable, computed. Used as the import identifier.
+- **`name`** — human-readable identifier. Required on create.
+- **`description`** — free-form text. Defaults to empty string.
+- **`enabled`** — toggles whether the rule is active. Defaults to `true`.
+- **`auto_approve`** — `true` grants matching requests immediately; `false` requires approval from configured groups. Required on create.
+- **`sso_group_ids`** — SSO groups whose members may request access under this rule. Required.
+- **`approver_group_ids`** — groups that can approve when `auto_approve = false`. Required when approval is needed.
+- **`oncall_approval`** — auto-approve requesters who are currently on-call. Defaults to `true`. Only applies when `auto_approve = false`.
+- **`accounts`** — nested block defining which AWS accounts/OUs/tags the rule applies to.
+- **`permission_sets`** — nested block defining which SSO permission sets the rule applies to.
+- **`created_at`** / **`updated_at`** — server-managed timestamps. `updated_at` doubles as the ETag.
+
+Updates are full replacements, not patches. The entire rule object is sent on every `Update`.
+
+### Account conditions
+
+Each `accounts` block defines a matching condition with a type discriminator:
+
+| Type | Required fields | Description |
+|------|----------------|-------------|
+| `account_id` | `account_id` | Matches a specific 12-digit AWS account ID |
+| `account_tag` | `tag_key`, `tag_value` | Matches accounts with a specific tag key-value pair |
+| `ou_descendant` | `ou_id` | Matches all accounts descending from an AWS OU (`ou-...` format) |
+
+A rule can have multiple `accounts` blocks; a request matches if it targets any of the listed accounts/OUs.
+
+### Permission set conditions
+
+Each `permission_sets` block defines a matching condition:
+
+| Type | Required fields | Description |
+|------|----------------|-------------|
+| `permission_set_arn` | `arn` | Matches a specific SSO permission set ARN, or `"*"` for any |
+| `permission_set_tag` | `tag_key`, `tag_value` | Matches permission sets with a specific tag |
+
+### `jitguard_approval_rules` data source
+
+Returns a list of all approval rules for the customer. Useful for discovering existing rules before adopting them into Terraform state. The data source paginates through all server-side pages automatically (cursor-based pagination) and returns the full list.
+
+### Optimistic concurrency model
+
+The provider uses `If-Match`/ETag headers for update and delete operations:
+
+1. On `Read`, the provider stores `updated_at` (or `created_at` as fallback) in state as the version identifier.
+2. On `Update` or `Delete`, it sends `If-Match: "<timestamp>"` to the API.
+3. If the rule was modified on the server since the last read, the API returns `412 Precondition Failed` and Terraform fails the apply with a clear error message instructing the user to re-plan.
+4. If the rule was deleted concurrently, the provider gracefully removes it from state (returns nil without error).
+5. Missing `If-Match` on the server side returns `428 Precondition Required`, treated as an internal provider bug.
+
+This prevents silent overwrites from concurrent edits (e.g., someone editing the same rule in the web UI while Terraform runs).
+
+### Conversion layer
+
+The conversion layer translates between the Terraform Plugin Framework's `types.Set` / `types.Object` model and the machine API's JSON contract. It handles:
+
+- String set encoding/decoding (`types.Set` ↔ `[]string`)
+- Account condition nested objects (type discriminator + conditional fields, where only the relevant fields are set per type)
+- Permission set condition nested objects (similar type-discriminated pattern)
+- Null-vs-empty normalization — the API omits unset fields (decode to `""`), but the Terraform plan has `null` for them; the conversion normalizes empty strings to null to keep plan and state consistent
+
+### Validation
+
+Cross-attribute validation via `ValidateConfig` rejects a `requires-approval` rule (i.e., `auto_approve = false`) that has no `approver_group_ids` before any API call is made. This mirrors the machine API's own validation and produces a clear diagnostic at plan time, preventing wasted API calls.
+
+### HTTP client
+
+The API client layer provides:
+
+- Bearer token authentication (`Authorization: Bearer <api_key>`)
+- JSON request/response serialization
+- Structured error handling — API errors are decoded into an `APIError` type with status code, error code, message, and optional field reference
+- Configurable timeout (30 seconds default)
+- Optional TLS skip-verify for local testing
+- Paginated list traversal (cursor-based, opaque base64url cursors)
+
+## Integration Points
+
+### Upstream (who calls this)
+
+- **Terraform CLI** — executes the provider binary via the plugin protocol (gRPC over stdio)
+- **CI/CD pipelines** — run `terraform plan`/`apply` as part of infrastructure-as-code workflows
+- **Developers** — write HCL configuration files defining approval rules
+
+### Downstream (what this calls)
+
+- **customer-rules-api lambda** — the machine API endpoint at `/api/customer/api/rules` that performs CRUDL operations on rules. The provider sends authenticated HTTP requests with a `Bearer` token. The lambda validates the API key via `requireApiKey`, which hashes the key and looks it up in DynamoDB, checking status and environment match.
+- **DynamoDB main table** — the machine API reads/writes `RULE#<ruleId>` items; the provider never touches DynamoDB directly
+- **DynamoDB customer_audit table** — all rule mutations are audited by the machine API with an `actorType: 'service'` shape
+
+### External systems
+
+- **S3 + CloudFront** — the provider binary is distributed via a Terraform Provider Network Mirror hosted at `https://jitguard.com/terraform/`, served from an S3 bucket with CloudFront OAC. The mirror layout includes a mirror index, version manifests with `h1:` hashes, and per-platform zip archives.
+- **Terraform Registry** — not yet published; the binary is installed locally or fetched from the network mirror. Publication requires reliable local + acceptance tests (CI gate).
+
+## Invariants
+
+- **API key scoping**: each API key is scoped to a single customer; the provider can only manage rules for the customer that minted the key. There is no cross-customer access.
+- **Full replacement updates**: every `Update` sends the complete rule object, not a diff. The server replaces the entire rule, preserving `createdAt` and bumping `updatedAt`.
+- **Optimistic concurrency**: all mutations require a valid `If-Match` header. Stale or missing headers fail the request (412 or 428). The provider always reads before writing.
+- **No state drift detection**: the provider does not detect drift beyond what Terraform's refresh cycle provides. If a rule is modified outside Terraform (web UI, direct API call), the next plan will show a diff.
+- **Rate limiting**: the machine API enforces per-customer rate limits (default 120 requests/60s). Exceeding returns 429 with `Retry-After`. The provider does not implement client-side backoff.
+- **Key immutability**: the API key is used as-is on every request. If the key is revoked server-side, all subsequent provider operations fail with 401.
+- **Validation-before-apply**: the provider performs cross-attribute validation (e.g., approver groups required when approval is needed) at plan time, before any API call is made.
+- **Idempotent reads**: `GET` operations are safe to retry. The provider's `Read` method always re-fetches the current state from the server.
+
+## Testing
+
+The provider ships two tiers of tests:
+
+- **Unit tests** (`go test`) — test the HTTP client layer, error mapping, and conversion logic against an in-process `httptest` fake. No credentials or network required.
+- **Framework acceptance tests** — run the real Terraform plugin protocol against an in-process fake of the machine API, covering create/update/import/data-source/delete flows. These require the `TF_ACC` environment variable.
+
+For end-to-end validation, developers can run `terraform plan`/`apply` against a real environment with a minted API key.
+
+## Distribution
+
+The provider is distributed via a Terraform Provider Network Mirror:
+
+1. **Build** — `goreleaser` builds per-platform zip archives (linux/darwin × amd64/arm64)
+2. **Publish** — the mirror publish script generates the mirror index and version manifests with `h1:` hashes, and syncs them to the S3 bucket under the `terraform/` prefix
+3. **Install** — customers either run the provider download script (installs to the implicit filesystem mirror) or configure a `network_mirror` block in the Terraform CLI configuration pointing at `https://jitguard.com/terraform/`
+4. **Docs** — the provider documentation generator produces reference documentation from the provider schema, served from the same mirror at `https://jitguard.com/terraform/docs/`
+
+## Related Decisions
+
+- [ADR-0015](../adr/0015-customer-api-keys-and-rules-provider.md) — customer API keys, rules CRUDL endpoints, and Terraform provider (the foundational decision for this domain)
+- [ADR-0010](../adr/0010-approval-rules-engine.md) — the rule engine data model that the provider's rules conform to (`RULE#` items on the main table)

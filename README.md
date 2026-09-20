@@ -20,35 +20,29 @@ The provider talks to the JIT Guard rules CRUDL endpoints:
 
 ## Installation
 
-The provider is hosted as a Provider Network Mirror at
-`https://jitguard.com/terraform/` and served via CloudFront.
+The provider is published as GitHub Releases on
+`github.com/barneyparker/terraform-provider-jitguard`. It is not on the public
+Terraform Registry, so install it into Terraform's implicit filesystem mirror.
 
-### Option 1 — install locally (recommended)
+### Install locally (recommended)
 
 ```sh
 ./scripts/download-provider.sh
 ```
 
-This downloads the version, verifies its `h1:` hash, and installs the binary
-into the implicit filesystem-mirror location
+This downloads the release archive from GitHub, verifies it against the
+release's `SHA256SUMS`, and installs the binary into the implicit
+filesystem-mirror location
 (`~/.terraform.d/plugins/registry.terraform.io/barneyparker/jitguard/<version>/<os>_<arch>/`),
 so `terraform init` finds it automatically — no extra configuration.
 
 You can pass a version: `./scripts/download-provider.sh 0.2.0`.
 
-### Option 2 — use the mirror directly over HTTPS
+### Manual install
 
-Add a `network_mirror` to your Terraform CLI config (`.terraformrc`):
-
-```hcl
-provider_installation {
-  network_mirror {
-    url = "https://jitguard.com/terraform/"
-  }
-}
-```
-
-Then `terraform init` fetches the provider from the mirror on any machine.
+Download `terraform-provider-jitguard_v<version>_<os>_<arch>.zip` and
+`SHA256SUMS` from the release, verify the checksum, and unzip the binary into
+the path above.
 
 ### Configuration
 
@@ -73,25 +67,28 @@ See `example/main.tf` for a complete configuration.
 
 ## Publishing a new version
 
-Run `scripts/publish-mirror.sh` (CI does this automatically on pushes to
-`main`):
+Tag a release; CI builds the artifacts and publishes a GitHub Release:
 
 ```sh
-VERSION=0.2.0 ./scripts/publish-mirror.sh
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
-It builds per-platform zip archives (linux/darwin × amd64/arm64), generates
-the mirror `index.json` / `<version>.json` manifests with `h1:` hashes, and
-syncs them to the `jitguard-<env>-terraform-providers` S3 bucket under the
-`terraform/` prefix. It also syncs the generated reference documentation
-(`docs/`) to `https://jitguard.com/terraform/docs/`.
+`scripts/build-release.sh` builds
+`terraform-provider-jitguard_v<version>_{os}_{arch}.zip` for
+linux/darwin × amd64/arm64, plus a `SHA256SUMS` file. To build locally:
+
+```sh
+VERSION=0.2.0 make release
+```
+
+If the repository is later made public, these same assets are what the
+Terraform Registry needs to publish the provider under `barneyparker/jitguard`.
 
 ## Reference documentation
 
 The docs in `docs/` are generated from the provider schema with
 [`tfplugindocs`](https://github.com/hashicorp/terraform-plugin-docs) and are
-served at `https://jitguard.com/terraform/docs/`. They are
-also what the Terraform Registry renders if/when the provider is published.
+what the Terraform Registry renders if/when the provider is published.
 
 Regenerate after changing the schema:
 
