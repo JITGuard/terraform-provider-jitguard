@@ -1,0 +1,149 @@
+name: CI
+
+# Build, test, and publish the JIT Guard Terraform provider.
+#
+# - pull_request        -> verify only (no AWS access, no publish)
+# - push to main        -> verify + publish the mirror to prod
+# - workflow_dispatch   -> verify + publish to the chosen environment
+#
+# AWS access is OIDC only (no long-lived keys): assume the shared
+# `github-actions` role, then chain into the target account's `DeploymentRole`.
+# The publishing account must have an OIDC trust policy that allows this repo.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to publish (prod requires an explicit promote)"
+        type: choice
+        default: prod
+        options:
+          - prod
+          - dev
+
+permissions:
+  id-token: write
+  contents: read
+  # gitleaks-action reads PR commits/files on pull_request events.
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  target:
+    name: Resolve target
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.target.outputs.env }}
+      account: ${{ steps.target.outputs.account }}
+      deploy: ${{ steps.target.outputs.deploy }}
+    steps:
+      - name: Resolve target
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENV: ${{ inputs.environment }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "env=prod" >> "$GITHUB_OUTPUT"
+            echo "account=233084605897" >> "$GITHUB_OUTPUT"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "env=$INPUT_ENV" >> "$GITHUB_OUTPUT"
+            if [ "$INPUT_ENV" = "dev" ]; then
+              echo "account=428265842548" >> "$GITHUB_OUTPUT"
+            else
+              echo "account=233084605897" >> "$GITHUB_OUTPUT"
+            fi
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=dev" >> "$GITHUB_OUTPUT"
+            echo "account=428265842548" >> "$GITHUB_OUTPUT"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  security:
+    name: Secret scan
+    needs: [target]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Gitleaks — secret scanning
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify:
+    name: Verify
+    needs: [target]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Format check
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.0
+
+      - name: Verify docs are up to date
+        run: |
+          go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.21.0 generate
+          test -z "$(git status --porcelain docs/)" || { echo "docs/ is out of date — run 'make docs' and commit"; exit 1; }
+
+  publish:
+    name: Publish
+    needs: [target, verify]
+    if: needs.target.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.target.outputs.env }}
+    env:
+      TF_VAR_account_id: ${{ needs.target.outputs.account }}
+      TF_VAR_environment: ${{ needs.target.outputs.env }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Assume GitHub Actions role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::993471332178:role/github-actions
+          aws-region: eu-west-1
+
+      - name: Assume deployment role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-chaining: true
+          role-skip-session-tagging: true
+          role-to-assume: arn:aws:iam::${{ env.TF_VAR_account_id }}:role/DeploymentRole
+          aws-region: eu-west-1
+
+      - name: Publish provider mirror to S3
+        run: ./scripts/publish-mirror.sh

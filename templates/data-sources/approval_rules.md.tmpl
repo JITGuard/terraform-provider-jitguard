@@ -1,0 +1,23 @@
+---
+page_title: "jitguard_approval_rules Data Source - terraform-provider-jitguard"
+subcategory: ""
+description: |-
+  Lists every approval rule for the customer.
+---
+
+# jitguard_approval_rules (Data Source)
+
+Lists every approval rule for the customer. Useful for discovering existing
+rules before adopting them into Terraform.
+
+## Example Usage
+
+```terraform
+data "jitguard_approval_rules" "all" {}
+
+output "rule_names" {
+  value = [for r in data.jitguard_approval_rules.all.rules : r.name]
+}
+```
+
+{{ .SchemaMarkdown }}

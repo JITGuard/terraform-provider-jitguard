@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      hashicorp:
+        patterns:
+          - "github.com/hashicorp/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "actions/*"
+      aws-actions:
+        patterns:
+          - "aws-actions/*"
+      hashicorp:
+        patterns:
+          - "hashicorp/*"

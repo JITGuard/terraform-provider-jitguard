@@ -1,0 +1,63 @@
+---
+page_title: "jitguard_approval_rule Resource - terraform-provider-jitguard"
+subcategory: ""
+description: |-
+  An approval rule managed through the JIT Guard machine API.
+---
+
+# jitguard_approval_rule (Resource)
+
+An approval rule. Create, read, update, and delete via the API-key-secured
+JIT Guard machine API. Updates are full replacements guarded by an
+`If-Match`/ETag; a concurrent edit on the server fails the apply with a 412.
+
+## Example Usage
+
+```terraform
+resource "jitguard_approval_rule" "sre_emergency" {
+  name          = "SRE Emergency"
+  description   = "Emergency access for on-call SRE."
+  auto_approve  = true
+  enabled       = true
+  sso_group_ids = ["grp-sre"]
+
+  accounts {
+    type       = "account_id"
+    account_id = "111111111111"
+  }
+
+  permission_sets {
+    type = "permission_set_arn"
+    arn  = "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-22222222222222222222222222222222"
+  }
+}
+```
+
+## Validation notes
+
+- `name` is required and must be a non-empty string (max 80 characters).
+- `auto_approve` is required: `true` (grant immediately) or `false` (require
+  approval).
+- `sso_group_ids` is required and must be non-empty.
+- `accounts` and `permission_sets` are required and must each contain at
+  least one block.
+- When `auto_approve = false`, `approver_group_ids` is required and must be
+  non-empty.
+- Account conditions match by AWS account ID (`account_id`), OU ID
+  (`ou_id`), or tag; permission-set conditions match by SSO permission set
+  ARN (`arn`, or `"*"` for any) or tag. `account_id`, `ou_id`, and `arn` are
+  shape-validated.
+- Each `accounts` block requires exactly the fields for its `type` (see
+  below); each `permission_sets` block likewise. The provider's `type`
+  validators reject a block whose type-specific field is missing, and the
+  API returns a precise 400 `{ error, field }` if a condition is incomplete.
+
+{{ .SchemaMarkdown }}
+
+## Import
+
+Import is supported using the rule ID:
+
+```terraform
+terraform import jitguard_approval_rule.example <rule_id>
+```
