@@ -2,7 +2,7 @@
 
 The Terraform Provider lets customers manage JIT Guard approval rules as code, through a Go-based custom provider that talks to the API-key-secured machine API. Without it, approval rules can only be managed via the web UI; the provider enables version-controlled, auditable, reproducible rule definitions aligned with infrastructure-as-code practices.
 
-The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework. It is not published to the Terraform Registry yet — customers install it from a network mirror hosted at `https://jitguard.com/terraform/` (S3 + CloudFront) or via a local filesystem mirror.
+The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework. It is not published to the Terraform Registry yet — releases are published as GitHub Releases on `github.com/barneyparker/terraform-provider-jitguard`, and customers install them into Terraform's implicit filesystem mirror with the download script.
 
 ## Boundaries
 
@@ -13,8 +13,8 @@ The provider is distributed as a standalone Go binary, built on the Terraform Pl
 - **Provider data sources**: `jitguard_approval_rules` — paginated list of all customer rules
 - **Provider config**: endpoint URL, API key, TLS skip-verify
 - **Client layer**: HTTP client with bearer auth, request/response handling, error mapping
-- **Distribution**: S3 bucket + CloudFront network mirror, publish/download scripts
-- **Reference documentation**: generated via `tfplugindocs`, served from the mirror
+- **Distribution**: GitHub Releases plus the download script that installs into the implicit filesystem mirror
+- **Reference documentation**: generated via `tfplugindocs`
 
 ### What does NOT belong here
 
@@ -89,7 +89,7 @@ sequenceDiagram
 
 The provider follows the standard Terraform plugin lifecycle:
 
-1. **Init** — Terraform fetches the provider binary (from the network mirror or local filesystem), starts the plugin process, and negotiates the protocol version.
+1. **Init** — Terraform fetches the provider binary (from the filesystem mirror), starts the plugin process, and negotiates the protocol version.
 2. **Configure** — Terraform reads the provider block (`endpoint`, `api_key`, `skip_verify`), resolves the API key from config or environment variable, and constructs the shared HTTP client.
 3. **Plan** — For each resource/data source, the provider reads the current remote state (GET from the machine API) and compares it to the desired state in HCL. Cross-attribute validation runs before any API call.
 4. **Apply** — Creates, updates, or deletes resources via the machine API. Updates use full replacement with `If-Match` optimistic concurrency.
@@ -207,8 +207,8 @@ The API client layer provides:
 
 ### External systems
 
-- **S3 + CloudFront** — the provider binary is distributed via a Terraform Provider Network Mirror hosted at `https://jitguard.com/terraform/`, served from an S3 bucket with CloudFront OAC. The mirror layout includes a mirror index, version manifests with `h1:` hashes, and per-platform zip archives.
-- **Terraform Registry** — not yet published; the binary is installed locally or fetched from the network mirror. Publication requires reliable local + acceptance tests (CI gate).
+- **GitHub Releases** — the provider binary is published as per-platform zip archives plus a `SHA256SUMS` file on GitHub Releases. Customers install via `scripts/download-provider.sh`, which fetches the assets, verifies the checksum, and installs the binary into Terraform's implicit filesystem mirror.
+- **Terraform Registry** — not yet published; the binary is installed locally via the filesystem mirror. Publication requires a public repository plus reliable local + acceptance tests (CI gate).
 
 ## Invariants
 
@@ -232,14 +232,14 @@ For end-to-end validation, developers can run `terraform plan`/`apply` against a
 
 ## Distribution
 
-The provider is distributed via a Terraform Provider Network Mirror:
+The provider is published as GitHub Releases:
 
-1. **Build** — `goreleaser` builds per-platform zip archives (linux/darwin × amd64/arm64)
-2. **Publish** — the mirror publish script generates the mirror index and version manifests with `h1:` hashes, and syncs them to the S3 bucket under the `terraform/` prefix
-3. **Install** — customers either run the provider download script (installs to the implicit filesystem mirror) or configure a `network_mirror` block in the Terraform CLI configuration pointing at `https://jitguard.com/terraform/`
-4. **Docs** — the provider documentation generator produces reference documentation from the provider schema, served from the same mirror at `https://jitguard.com/terraform/docs/`
+1. **Build** — `scripts/build-release.sh` builds per-platform zip archives (linux/darwin × amd64/arm64) plus a `SHA256SUMS` file
+2. **Publish** — pushing a `v*` tag runs `.github/workflows/release.yml`, which creates a GitHub Release with those assets
+3. **Install** — customers run `scripts/download-provider.sh`, which fetches the release assets, verifies the checksum, and installs the binary into Terraform's implicit filesystem mirror
+4. **Docs** — `tfplugindocs` generates the reference documentation from the provider schema into `docs/`
 
 ## Related Decisions
 
-- [ADR-0015](../adr/0015-customer-api-keys-and-rules-provider.md) — customer API keys, rules CRUDL endpoints, and Terraform provider (the foundational decision for this domain)
-- [ADR-0010](../adr/0010-approval-rules-engine.md) — the rule engine data model that the provider's rules conform to (`RULE#` items on the main table)
+- [ADR-0015](https://github.com/barneyparker/jit-guard/blob/main/docs/adr/0015-customer-api-keys-and-rules-provider.md) — customer API keys, rules CRUDL endpoints, and Terraform provider (the foundational decision for this domain)
+- [ADR-0010](https://github.com/barneyparker/jit-guard/blob/main/docs/adr/0010-approval-rules-engine.md) — the rule engine data model that the provider's rules conform to (`RULE#` items on the main table)
