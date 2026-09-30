@@ -59,6 +59,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.0
+          terraform_wrapper: false
 
       - name: Verify docs are up to date
         run: |
