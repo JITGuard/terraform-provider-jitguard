@@ -22,7 +22,7 @@ concurrency:
 jobs:
   security:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     steps:
       - uses: actions/checkout@v7
         with:
@@ -31,10 +31,11 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   verify:
     name: Verify
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     steps:
       - uses: actions/checkout@v7
 
@@ -58,6 +59,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.0
+          terraform_wrapper: false
 
       - name: Verify docs are up to date
         run: |
