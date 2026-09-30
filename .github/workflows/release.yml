@@ -20,7 +20,7 @@ permissions:
 jobs:
   release:
     name: Build & release
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     steps:
       - uses: actions/checkout@v7
         with:
