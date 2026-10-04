@@ -27,7 +27,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Dependabot PRs are gated out: GitHub withholds all Actions secrets from
+      # dependabot-triggered pull_request runs, so GITLEAKS_LICENSE is empty and
+      # gitleaks-action v3 hard-errors on an org repo. Dependabot only touches
+      # dependency manifests, and the push-to-main run scans the merge commit.
       - name: Gitleaks — secret scanning
+        if: github.actor != 'dependabot[bot]'
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
