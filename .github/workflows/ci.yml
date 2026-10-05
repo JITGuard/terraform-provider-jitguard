@@ -38,6 +38,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
           GITLEAKS_CONFIG: jitguard-api-key.toml
+          # Root self-hosted runner (HOME=/root) vs workspace under
+          # /home/runner/_work: point HOME at the workspace parent so
+          # gitleaks-action accepts results.sarif.
+          HOME: ${{ github.workspace }}/..
 
   verify:
     name: Verify
