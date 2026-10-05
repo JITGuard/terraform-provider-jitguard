@@ -5,7 +5,7 @@ import (
 	"flag"
 	"log"
 
-	"github.com/barneyparker/terraform-provider-jitguard/internal/provider"
+	"github.com/JITGuard/terraform-provider-jitguard/internal/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 )
 
@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/barneyparker/jitguard",
+		Address: "registry.terraform.io/JITGuard/jitguard",
 		Debug:   debug,
 	}
 	if err := providerserver.Serve(context.Background(), provider.New(version), opts); err != nil {

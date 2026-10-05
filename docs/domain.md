@@ -2,7 +2,7 @@
 
 The Terraform Provider lets customers manage JIT Guard approval rules as code, through a Go-based custom provider that talks to the API-key-secured machine API. Without it, approval rules can only be managed via the web UI; the provider enables version-controlled, auditable, reproducible rule definitions aligned with infrastructure-as-code practices.
 
-The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework. It is not published to the Terraform Registry yet — releases are published as GitHub Releases on `github.com/barneyparker/terraform-provider-jitguard`, and customers install them into Terraform's implicit filesystem mirror with the download script.
+The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework. It is not published to the Terraform Registry yet — releases are published as GitHub Releases on `github.com/JITGuard/terraform-provider-jitguard`, and customers install them into Terraform's implicit filesystem mirror with the download script.
 
 ## Boundaries
 
@@ -241,5 +241,5 @@ The provider is published as GitHub Releases:
 
 ## Related Decisions
 
-- [ADR-0015](https://github.com/barneyparker/jit-guard/blob/main/docs/adr/0015-customer-api-keys-and-rules-provider.md) — customer API keys, rules CRUDL endpoints, and Terraform provider (the foundational decision for this domain)
-- [ADR-0010](https://github.com/barneyparker/jit-guard/blob/main/docs/adr/0010-approval-rules-engine.md) — the rule engine data model that the provider's rules conform to (`RULE#` items on the main table)
+- [ADR-0015](https://github.com/JITGuard/jit-guard/blob/main/docs/adr/0015-customer-api-keys-and-rules-provider.md) — customer API keys, rules CRUDL endpoints, and Terraform provider (the foundational decision for this domain)
+- [ADR-0010](https://github.com/JITGuard/jit-guard/blob/main/docs/adr/0010-approval-rules-engine.md) — the rule engine data model that the provider's rules conform to (`RULE#` items on the main table)

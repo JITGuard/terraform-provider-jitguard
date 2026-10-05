@@ -1,4 +1,4 @@
-module github.com/barneyparker/terraform-provider-jitguard
+module github.com/JITGuard/terraform-provider-jitguard
 
 go 1.25.8
 
