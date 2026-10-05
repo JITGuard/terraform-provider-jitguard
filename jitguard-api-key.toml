@@ -1,0 +1,17 @@
+# JIT Guard custom gitleaks rules.
+# Wired into the security scan via GITLEAKS_CONFIG (gitleaks only auto-discovers
+# `.gitleaks.toml`, so the workflow points at this file explicitly).
+#
+# Extend the built-in ruleset so generic secret detection still runs alongside
+# the product-specific rule below.
+title = "JIT Guard custom secret rules"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "jitguard-api-key"
+description = "JIT Guard customer API key (bg_sk_live_/bg_sk_test_ prefix + 43-char secret + 6-char checksum)"
+regex = '''bg_sk_(live|test)_[A-Za-z0-9_-]{43}_[A-Za-z0-9_-]{6}'''
+entropy = 3.5
+keywords = ["bg_sk_live_", "bg_sk_test_"]
