@@ -5,20 +5,20 @@
 # picks it up without -plugin-dir.
 #
 # Implicit mirror path (Linux/macOS):
-#   ~/.terraform.d/plugins/registry.terraform.io/barneyparker/jitguard/<version>/<os>_<arch>/terraform-provider-jitguard_v<version>
+#   ~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/<version>/<os>_<arch>/terraform-provider-jitguard_v<version>
 #
 # Usage:
 #   ./scripts/download-provider.sh [VERSION]
 #
 # Env:
 #   REPO       GitHub owner/repo hosting the releases
-#              (default barneyparker/terraform-provider-jitguard)
+#              (default JITGuard/terraform-provider-jitguard)
 #   VERSION    provider version to install (default 0.1.0); pass as arg to override
 #   OS_ARCH    explicit target, e.g. linux_amd64 (default: auto-detect)
 set -euo pipefail
 
 VERSION="${1:-${VERSION:-0.1.0}}"
-REPO="${REPO:-barneyparker/terraform-provider-jitguard}"
+REPO="${REPO:-JITGuard/terraform-provider-jitguard}"
 RELEASE_BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
 
 HOSTNAME="registry.terraform.io"

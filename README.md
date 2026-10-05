@@ -21,7 +21,7 @@ The provider talks to the JIT Guard rules CRUDL endpoints:
 ## Installation
 
 The provider is published as GitHub Releases on
-`github.com/barneyparker/terraform-provider-jitguard`. It is not on the public
+`github.com/JITGuard/terraform-provider-jitguard`. It is not on the public
 Terraform Registry, so install it into Terraform's implicit filesystem mirror.
 
 ### Install locally (recommended)
@@ -33,7 +33,7 @@ Terraform Registry, so install it into Terraform's implicit filesystem mirror.
 This downloads the release archive from GitHub, verifies it against the
 release's `SHA256SUMS`, and installs the binary into the implicit
 filesystem-mirror location
-(`~/.terraform.d/plugins/registry.terraform.io/barneyparker/jitguard/<version>/<os>_<arch>/`),
+(`~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/<version>/<os>_<arch>/`),
 so `terraform init` finds it automatically — no extra configuration.
 
 You can pass a version: `./scripts/download-provider.sh 0.2.0`.
@@ -51,7 +51,7 @@ terraform {
   required_version = ">= 1.5"
   required_providers {
     jitguard = {
-      source  = "registry.terraform.io/barneyparker/jitguard"
+      source  = "registry.terraform.io/JITGuard/jitguard"
       version = "0.1.0"
     }
   }
@@ -82,7 +82,7 @@ VERSION=0.2.0 make release
 ```
 
 If the repository is later made public, these same assets are what the
-Terraform Registry needs to publish the provider under `barneyparker/jitguard`.
+Terraform Registry needs to publish the provider under `JITGuard/jitguard`.
 
 ## Reference documentation
 

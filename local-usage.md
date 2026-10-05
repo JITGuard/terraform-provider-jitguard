@@ -12,11 +12,11 @@ See the [index](index.md) for the full provider reference.
 ```
 
 This fetches the provider from the GitHub Releases for
-`barneyparker/terraform-provider-jitguard`, verifies its SHA256 checksum, and
+`JITGuard/terraform-provider-jitguard`, verifies its SHA256 checksum, and
 installs it to:
 
 ```
-~/.terraform.d/plugins/registry.terraform.io/barneyparker/jitguard/0.1.0/linux_amd64/
+~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/0.1.0/linux_amd64/
 ```
 
 `terraform init` finds this location automatically — no `-plugin-dir` or
@@ -42,7 +42,7 @@ export JITGUARD_API_KEY=bg_sk_live_...
 terraform {
   required_providers {
     jitguard = {
-      source  = "registry.terraform.io/barneyparker/jitguard"
+      source  = "registry.terraform.io/JITGuard/jitguard"
       version = "0.1.0"
     }
   }
@@ -86,14 +86,14 @@ and use a key minted in that environment.
 Delete the installed directory:
 
 ```sh
-rm -rf ~/.terraform.d/plugins/registry.terraform.io/barneyparker/jitguard
+rm -rf ~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard
 ```
 
 ## Troubleshooting
 
 - **`Could not retrieve the list of available versions`** — the release tag or
   asset name doesn't match; check the tags on
-  `github.com/barneyparker/terraform-provider-jitguard/releases`.
+  `github.com/JITGuard/terraform-provider-jitguard/releases`.
 - **`no available releases match`** — you asked for a version that isn't
   published yet; run `./scripts/download-provider.sh` to confirm what's
   current, or bump your `required_providers` constraint.

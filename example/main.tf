@@ -2,7 +2,7 @@ terraform {
   required_version = ">= 1.5"
   required_providers {
     jitguard = {
-      source  = "registry.terraform.io/barneyparker/jitguard"
+      source  = "registry.terraform.io/JITGuard/jitguard"
       version = "0.1.0"
     }
   }
