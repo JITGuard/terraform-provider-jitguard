@@ -10,10 +10,15 @@ The provider currently manages:
   a concurrent edit on the server fails the apply loudly (412).
 - `jitguard_approval_rules` — list the customer's rules, useful for adopting
   existing rules into Terraform.
+- `jitguard_organization_settings` — the singleton organization name, default
+  permission set and approval expiry window.
+- `jitguard_integration_pagerduty` — the PagerDuty integration. The API key is
+  write-only and never stored in state.
+- `jitguard_aws_connection` — read JIT Guard's AWS organization connection.
+- `jitguard_integrations` — read Slack and PagerDuty integration status.
 
-Organization settings, AWS connection information and messaging/on-call
-integrations are the next machine-API surfaces; they are tracked separately
-from the initial approval-rule release.
+AWS accounts, OUs, permission sets and groups remain the AWS provider's job;
+JIT Guard only exposes its connection to that org.
 
 ## Requirements
 
@@ -136,6 +141,67 @@ One of `permission_set_arn` or `permission_set_tag` per block:
 
 A data source returning a `rules` list of the same objects as the resource.
 Useful for discovering rules before adopting them.
+
+### `jitguard_organization_settings`
+
+The singleton organization settings object. Import with the fixed ID
+`settings`; deleting it leaves the server settings unchanged.
+
+```hcl
+resource "jitguard_organization_settings" "this" {
+  name                       = "Acme Corp"
+  default_permission_set_arn = "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-22222222222222222222222222222222"
+  approval_expiry_hours      = 12
+}
+```
+
+Omit an attribute to leave the server value unchanged. Set
+`default_permission_set_arn = ""` to clear it.
+
+### `jitguard_integration_pagerduty`
+
+The PagerDuty integration. `api_key` is **write-only**, so it is never stored in
+state or plan. Bump `api_key_version` to rotate the key.
+
+```hcl
+variable "pagerduty_api_key" {
+  type      = string
+  sensitive = true
+}
+
+resource "jitguard_integration_pagerduty" "this" {
+  api_key         = var.pagerduty_api_key
+  api_key_version = 1
+}
+```
+
+Slack is OAuth-installed in the web app and is read-only in Terraform.
+
+### `jitguard_aws_connection`
+
+Reads JIT Guard's connection status, management account, SSO region and SSO
+instance ARN. Use the AWS provider for account/OU/permission-set/group lookups.
+
+```hcl
+data "jitguard_aws_connection" "this" {}
+
+output "jitguard_management_account" {
+  value = data.jitguard_aws_connection.this.management_account_id
+}
+```
+
+### `jitguard_integrations`
+
+Reads Slack and PagerDuty status. The PagerDuty key is only ever exposed as
+`masked_api_key`.
+
+```hcl
+data "jitguard_integrations" "this" {}
+
+output "slack_team" {
+  value = data.jitguard_integrations.this.slack.team_name
+}
+```
 
 ## Development
 

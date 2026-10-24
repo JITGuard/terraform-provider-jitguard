@@ -1,0 +1,30 @@
+---
+page_title: "jitguard_integrations Data Source - terraform-provider-jitguard"
+subcategory: ""
+description: |-
+  Reads the customer's Slack and PagerDuty integration status.
+---
+
+# jitguard_integrations (Data Source)
+
+Reads the Slack and PagerDuty integration status.
+
+Slack is installed through OAuth in the JIT Guard web app and is read-only
+here. PagerDuty can be managed with
+[`jitguard_integration_pagerduty`](../resources/integration_pagerduty.md).
+
+## Example Usage
+
+```terraform
+data "jitguard_integrations" "this" {}
+
+output "slack_team" {
+  value = data.jitguard_integrations.this.slack.team_name
+}
+
+output "pagerduty_connected" {
+  value = data.jitguard_integrations.this.pagerduty.connected
+}
+```
+
+{{ .SchemaMarkdown }}

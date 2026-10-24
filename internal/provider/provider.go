@@ -97,11 +97,15 @@ func (p *jitguardProvider) Configure(ctx context.Context, req provider.Configure
 func (p *jitguardProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewApprovalRuleResource,
+		NewOrganizationSettingsResource,
+		NewPagerDutyIntegrationResource,
 	}
 }
 
 func (p *jitguardProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewApprovalRulesDataSource,
+		NewAWSConnectionDataSource,
+		NewIntegrationsDataSource,
 	}
 }
