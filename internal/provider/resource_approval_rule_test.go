@@ -200,9 +200,11 @@ resource "jitguard_approval_rule" "sre" {
 				),
 			},
 			{
-				ResourceName:      "jitguard_approval_rule.sre",
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:                         "jitguard_approval_rule.sre",
+				ImportState:                          true,
+				ImportStateId:                        "rule-1",
+				ImportStateVerify:                    true,
+				ImportStateVerifyIdentifierAttribute: "rule_id",
 			},
 			{
 				// Read the rules back through the data source.

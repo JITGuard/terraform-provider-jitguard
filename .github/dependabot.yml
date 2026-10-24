@@ -9,6 +9,16 @@ updates:
         patterns:
           - "github.com/hashicorp/*"
 
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    groups:
+      semantic-release:
+        patterns:
+          - "semantic-release"
+          - "@semantic-release/*"
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -23,3 +33,7 @@ updates:
       hashicorp:
         patterns:
           - "hashicorp/*"
+      release:
+        patterns:
+          - "goreleaser/*"
+          - "amannn/*"

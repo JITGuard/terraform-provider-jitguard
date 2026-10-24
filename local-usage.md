@@ -1,30 +1,45 @@
 # Using the provider locally
 
-Three steps: install the provider binary, create an API key, and write a
-Terraform config.
-
-See the [index](index.md) for the full provider reference.
+Three steps: install the provider, create an API key, and write a Terraform
+config.
 
 ## 1. Install the provider
 
+The normal path is the Terraform Registry:
+
+```hcl
+terraform {
+  required_version = ">= 1.11"
+  required_providers {
+    jitguard = {
+      source  = "JITGuard/jitguard"
+      version = "~> 0.2"
+    }
+  }
+}
+```
+
 ```sh
-./scripts/download-provider.sh
+terraform init
 ```
 
-This fetches the provider from the GitHub Releases for
-`JITGuard/terraform-provider-jitguard`, verifies its SHA256 checksum, and
-installs it to:
-
-```
-~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/0.1.0/linux_amd64/
-```
-
-`terraform init` finds this location automatically — no `-plugin-dir` or
-`.terraformrc` needed. Pass a version to install something specific:
+For a pre-release version, or when you cannot reach the Registry, install a
+GitHub Release into Terraform's implicit filesystem mirror:
 
 ```sh
 ./scripts/download-provider.sh 0.2.0
 ```
+
+This fetches the release archive from
+`github.com/JITGuard/terraform-provider-jitguard`, verifies its SHA256
+checksum, and installs it to:
+
+```text
+~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/0.2.0/linux_amd64/
+```
+
+`terraform init` finds that location automatically — no `-plugin-dir` or
+`.terraformrc` needed.
 
 ## 2. Create an API key
 
@@ -40,10 +55,11 @@ export JITGUARD_API_KEY=bg_sk_live_...
 ```hcl
 # main.tf
 terraform {
+  required_version = ">= 1.11"
   required_providers {
     jitguard = {
-      source  = "registry.terraform.io/JITGuard/jitguard"
-      version = "0.1.0"
+      source  = "JITGuard/jitguard"
+      version = "~> 0.2"
     }
   }
 }
@@ -53,9 +69,9 @@ provider "jitguard" {
 }
 
 resource "jitguard_approval_rule" "example" {
-  name           = "SRE Emergency"
-  auto_approve   = true
-  sso_group_ids  = ["grp-sre"]
+  name          = "SRE Emergency"
+  auto_approve  = true
+  sso_group_ids = ["grp-sre"]
 
   accounts {
     type       = "account_id"
@@ -83,19 +99,25 @@ and use a key minted in that environment.
 
 ## Removing the provider
 
-Delete the installed directory:
+If you installed it from the filesystem mirror, delete the installed
+directory:
 
 ```sh
 rm -rf ~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard
 ```
 
+A Registry install is cached under `.terraform/` and the shared plugin cache;
+`terraform init -upgrade` refreshes it.
+
 ## Troubleshooting
 
-- **`Could not retrieve the list of available versions`** — the release tag or
-  asset name doesn't match; check the tags on
-  `github.com/JITGuard/terraform-provider-jitguard/releases`.
-- **`no available releases match`** — you asked for a version that isn't
-  published yet; run `./scripts/download-provider.sh` to confirm what's
-  current, or bump your `required_providers` constraint.
+- **`Could not retrieve the list of available versions`** — check the source
+  address is `JITGuard/jitguard` and the version constraint matches a
+  published release.
+- **`no available releases match`** — the version isn't published yet; check
+  `github.com/JITGuard/terraform-provider-jitguard/releases` or relax the
+  constraint.
 - **`Missing API key`** — `JITGUARD_API_KEY` isn't set and no `api_key` is
   in the provider block.
+- **`precondition failed` (412)** — someone edited the rule outside Terraform
+  since the last read; re-plan and apply.

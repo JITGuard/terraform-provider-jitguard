@@ -1,29 +1,45 @@
 name: Release
 
-# Build and publish the provider as a GitHub Release.
+# semantic-release decides the version from the conventional commits on the
+# release branch, pushes the tag and generates the notes. The GitHub plugin
+# creates the release as a draft, uploads the signed assets, and then publishes
+# it, so the Terraform Registry webhook only fires once every asset is present.
 #
-# Run by pushing a version tag, e.g.:
-#   git tag v0.2.0 && git push origin v0.2.0
+# main  -> stable releases
+# next  -> prereleases (used to rehearse the Registry ingest before v0.2.0)
 #
-# Assets: terraform-provider-jitguard_vX.Y.Z_{os}_{arch}.zip for
-# linux/darwin x amd64/arm64, plus SHA256SUMS. Install with
-# scripts/download-provider.sh.
+# The signing key lives in a prod-only SSM SecureString:
+#   /jitguard/prod/terraform-provider-jitguard/gpg-signing-key
+# It is read through the existing GitHub Actions -> central github-actions ->
+# prod DeploymentRole chain. No dedicated role exists.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main, next]
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
+  # OIDC: assume the shared github-actions role, then the prod DeploymentRole.
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
-    name: Build & release
-    runs-on: arc-runner-set
+    name: Release
+    runs-on: ubuntu-latest
+    # Creates an auditable deployment record. Restrict the environment to the
+    # release branches in GitHub; no reviewers are required for automatic
+    # releases.
+    environment: release
     steps:
       - uses: actions/checkout@v7
         with:
+          # semantic-release needs the full history and every tag.
           fetch-depth: 0
 
       - uses: actions/setup-go@v7
@@ -31,14 +47,80 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build release artifacts
-        run: ./scripts/build-release.sh "${GITHUB_REF_NAME#v}"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
 
-      - name: Create GitHub Release
+      - name: Assume GitHub Actions role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::993471332178:role/github-actions
+          aws-region: eu-west-1
+
+      - name: Assume prod deployment role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-chaining: true
+          role-skip-session-tagging: true
+          role-to-assume: arn:aws:iam::233084605897:role/DeploymentRole
+          aws-region: eu-west-1
+
+      - name: Load signing key from SSM
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIGNING_KEY_PARAMETER: /jitguard/prod/terraform-provider-jitguard/gpg-signing-key
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            dist/*.zip dist/SHA256SUMS \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+          set -euo pipefail
+          umask 077
+
+          raw="$(aws ssm get-parameter \
+            --name "$SIGNING_KEY_PARAMETER" \
+            --with-decryption \
+            --query Parameter.Value \
+            --output text)"
+
+          if [ -z "$raw" ] || [ "$raw" = "placeholder" ]; then
+            echo "::error::$SIGNING_KEY_PARAMETER is not populated. Write the JSON signing secret before releasing."
+            exit 1
+          fi
+
+          key_file="$RUNNER_TEMP/gpg-private-key.asc"
+          pass_file="$RUNNER_TEMP/gpg-passphrase"
+          fpr_file="$RUNNER_TEMP/gpg-fingerprint"
+
+          jq -r '.privateKey' <<<"$raw" > "$key_file"
+          jq -r '.passphrase' <<<"$raw" > "$pass_file"
+          jq -r '.fingerprint' <<<"$raw" | tr -d '[:space:]' > "$fpr_file"
+
+          fingerprint="$(cat "$fpr_file")"
+          if [ -z "$fingerprint" ]; then
+            echo "::error::Signing key JSON is missing .fingerprint"
+            exit 1
+          fi
+
+          gpg --batch --import "$key_file"
+          gpg --batch --with-colons --list-secret-keys "$fingerprint" >/dev/null
+
+          echo "GPG_FINGERPRINT=$fingerprint" >> "$GITHUB_ENV"
+          echo "GPG_PASSPHRASE_FILE=$pass_file" >> "$GITHUB_ENV"
+
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          install-only: true
+
+      - name: Install release tooling
+        run: npm ci
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+      - name: Shred signing material
+        if: always()
+        run: |
+          shred -u "$RUNNER_TEMP/gpg-private-key.asc" "$RUNNER_TEMP/gpg-passphrase" "$RUNNER_TEMP/gpg-fingerprint" 2>/dev/null || true
+          gpgconf --kill gpg-agent 2>/dev/null || true
