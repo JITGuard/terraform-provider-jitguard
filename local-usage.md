@@ -12,7 +12,7 @@ terraform {
   required_version = ">= 1.11"
   required_providers {
     jitguard = {
-      source  = "JITGuard/jitguard"
+      source  = "jitguard/jitguard"
       version = "~> 0.2"
     }
   }
@@ -35,7 +35,7 @@ This fetches the release archive from
 checksum, and installs it to:
 
 ```text
-~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/0.2.0/linux_amd64/
+~/.terraform.d/plugins/registry.terraform.io/jitguard/jitguard/0.2.0/linux_amd64/
 ```
 
 `terraform init` finds that location automatically — no `-plugin-dir` or
@@ -58,7 +58,7 @@ terraform {
   required_version = ">= 1.11"
   required_providers {
     jitguard = {
-      source  = "JITGuard/jitguard"
+      source  = "jitguard/jitguard"
       version = "~> 0.2"
     }
   }
@@ -103,7 +103,7 @@ If you installed it from the filesystem mirror, delete the installed
 directory:
 
 ```sh
-rm -rf ~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard
+rm -rf ~/.terraform.d/plugins/registry.terraform.io/jitguard/jitguard
 ```
 
 A Registry install is cached under `.terraform/` and the shared plugin cache;
@@ -112,7 +112,7 @@ A Registry install is cached under `.terraform/` and the shared plugin cache;
 ## Troubleshooting
 
 - **`Could not retrieve the list of available versions`** — check the source
-  address is `JITGuard/jitguard` and the version constraint matches a
+  address is `jitguard/jitguard` and the version constraint matches a
   published release.
 - **`no available releases match`** — the version isn't published yet; check
   `github.com/JITGuard/terraform-provider-jitguard/releases` or relax the

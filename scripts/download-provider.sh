@@ -2,10 +2,10 @@
 #
 # Install a published jitguard Terraform provider into Terraform's implicit
 # filesystem mirror. This is a pre-Registry/offline fallback; the normal path
-# is `terraform init` against registry.terraform.io/JITGuard/jitguard.
+# is `terraform init` against registry.terraform.io/jitguard/jitguard.
 #
 # Implicit mirror path (Linux/macOS):
-#   ~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/<version>/<os>_<arch>/terraform-provider-jitguard_v<version>
+#   ~/.terraform.d/plugins/registry.terraform.io/jitguard/jitguard/<version>/<os>_<arch>/terraform-provider-jitguard_v<version>
 #
 # Usage:
 #   ./scripts/download-provider.sh [VERSION]
@@ -22,7 +22,7 @@ REPO="${REPO:-JITGuard/terraform-provider-jitguard}"
 RELEASE_BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
 
 HOSTNAME="registry.terraform.io"
-NAMESPACE="JITGuard"
+NAMESPACE="jitguard"
 TYPE="jitguard"
 
 detect_platform() {
