@@ -100,6 +100,13 @@ func (r *pagerDutyIntegrationResource) refresh(ctx context.Context, state *pager
 	state.APIKey = types.StringNull()
 }
 
+func apiKeyVersionOrZero(version types.Int64) types.Int64 {
+	if version.IsNull() || version.IsUnknown() {
+		return types.Int64Value(0)
+	}
+	return version
+}
+
 func (r *pagerDutyIntegrationResource) requireAPIKey(config pagerDutyIntegrationModel, diags *diag.Diagnostics) bool {
 	if config.APIKey.IsNull() || config.APIKey.IsUnknown() || config.APIKey.ValueString() == "" {
 		diags.AddAttributeError(
@@ -113,8 +120,9 @@ func (r *pagerDutyIntegrationResource) requireAPIKey(config pagerDutyIntegration
 }
 
 func (r *pagerDutyIntegrationResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var config pagerDutyIntegrationModel
+	var config, plan pagerDutyIntegrationModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -132,7 +140,7 @@ func (r *pagerDutyIntegrationResource) Create(ctx context.Context, req resource.
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	state.APIKeyVersion = config.APIKeyVersion
+	state.APIKeyVersion = apiKeyVersionOrZero(plan.APIKeyVersion)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -142,6 +150,12 @@ func (r *pagerDutyIntegrationResource) Read(ctx context.Context, req resource.Re
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	// api_key_version is a client-side rotation trigger. An imported resource
+	// has no stored value, so default it to 0. This also keeps the post-import
+	// state consistent with the schema default instead of returning null after
+	// an import/update.
+	state.APIKeyVersion = apiKeyVersionOrZero(state.APIKeyVersion)
 
 	integrations, err := r.client.GetIntegrations(ctx)
 	if err != nil {
@@ -162,8 +176,9 @@ func (r *pagerDutyIntegrationResource) Read(ctx context.Context, req resource.Re
 }
 
 func (r *pagerDutyIntegrationResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var config pagerDutyIntegrationModel
+	var config, plan pagerDutyIntegrationModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -181,7 +196,7 @@ func (r *pagerDutyIntegrationResource) Update(ctx context.Context, req resource.
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	state.APIKeyVersion = config.APIKeyVersion
+	state.APIKeyVersion = apiKeyVersionOrZero(plan.APIKeyVersion)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
