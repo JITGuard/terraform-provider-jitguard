@@ -334,7 +334,6 @@ type Settings struct {
 	Name                string                 `json:"name"`
 	NameSet             bool                   `json:"nameSet"`
 	ApprovalExpiryHours int64                  `json:"approvalExpiryHours"`
-	PermissionSetARN    string                 `json:"permissionSetArn"`
 	ConnectionStatus    string                 `json:"connectionStatus"`
 	ManagementAccountID string                 `json:"managementAccountId"`
 	SSORegion           string                 `json:"ssoRegion"`
@@ -343,11 +342,9 @@ type Settings struct {
 }
 
 // SettingsUpdate is a partial update. Nil fields are omitted, so a resource
-// that only configures one attribute cannot clobber the others. A non-nil
-// pointer to "" deliberately clears the default permission set.
+// that only configures one attribute cannot clobber the others.
 type SettingsUpdate struct {
 	Name                *string `json:"name,omitempty"`
-	PermissionSetARN    *string `json:"permissionSetArn,omitempty"`
 	ApprovalExpiryHours *int64  `json:"approvalExpiryHours,omitempty"`
 }
 

@@ -7,8 +7,9 @@ description: |-
 
 # jitguard_organization_settings (Resource)
 
-Manages the singleton organization settings object: the display name, the
-default SSO permission set, and the approval expiry window.
+Manages the singleton organization settings object: the display name and the
+approval expiry window. Permission sets are selected per promotion request and
+matched by `jitguard_approval_rule`, not configured here.
 
 This is one resource per customer. Import it with the fixed ID `settings`.
 Deleting the resource removes it from Terraform state but leaves the server
@@ -18,14 +19,12 @@ settings unchanged; there is no way to delete a customer's settings object.
 
 ```terraform
 resource "jitguard_organization_settings" "this" {
-  name                       = "Acme Corp"
-  default_permission_set_arn = "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-22222222222222222222222222222222"
-  approval_expiry_hours      = 12
+  name                  = "Acme Corp"
+  approval_expiry_hours = 12
 }
 ```
 
-Omit an attribute to leave the server value unchanged. Set
-`default_permission_set_arn = ""` to clear the default permission set.
+Omit an attribute to leave the server value unchanged.
 
 {{ .SchemaMarkdown }}
 
