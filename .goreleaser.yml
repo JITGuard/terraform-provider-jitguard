@@ -1,6 +1,9 @@
 # GoReleaser configuration for the Terraform Registry.
 #
-# The Release workflow runs `goreleaser release --clean --skip=publish`:
+# The Release workflow runs `goreleaser release --clean --skip=publish` with
+# GORELEASER_CURRENT_TAG set to semantic-release's tag. That override matters:
+# when a stable tag and a prerelease tag point at the same commit, GoReleaser's
+# own detection can pick the prerelease and build the wrong asset names.
 # GoReleaser builds and signs the artifacts; semantic-release creates the
 # GitHub Release as a draft, uploads the assets, then publishes it.
 #
@@ -36,6 +39,7 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64

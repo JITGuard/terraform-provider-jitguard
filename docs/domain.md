@@ -235,7 +235,7 @@ For end-to-end validation, developers can run `terraform plan`/`apply` against a
 The provider is published to the Terraform Registry from signed GitHub Releases:
 
 1. **Version** — merging a Conventional-Commit PR to `main` runs `semantic-release`, which computes the next SemVer version from the commits, generates the release notes, and pushes the tag. The `next` branch produces prereleases.
-2. **Build** — GoReleaser builds per-platform zip archives (linux/darwin × amd64/arm64), the `terraform-registry-manifest.json` release asset, and `SHA256SUMS`; it signs the checksums with the prod signing key from SSM.
+2. **Build** — GoReleaser builds per-platform zip archives (linux/darwin/windows × amd64/arm64), the `terraform-registry-manifest.json` release asset, and `SHA256SUMS`; it signs the checksums with the prod signing key from SSM.
 3. **Draft + publish** — `semantic-release` creates a draft GitHub Release, uploads every signed asset, and then publishes it, so the Registry webhook only fires once the release is complete.
 4. **Install** — customers run `terraform init`; `scripts/download-provider.sh` remains the pre-release/offline fallback.
 5. **Docs** — `tfplugindocs` generates the reference documentation from the provider schema into `docs/`.

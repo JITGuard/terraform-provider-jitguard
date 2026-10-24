@@ -178,7 +178,7 @@ from being cut before the signing key and Registry are ready.
 1. Merge a Conventional-Commit PR to `main`.
 2. `semantic-release` computes the next version from the commits, pushes the
    tag, and generates the release notes.
-3. `GoReleaser` builds the linux/darwin amd64/arm64 archives, the Registry
+3. `GoReleaser` builds the linux/darwin/windows amd64/arm64 archives, the Registry
    manifest, `SHA256SUMS`, and its GPG signature.
 4. `semantic-release` creates a **draft** GitHub Release, uploads every signed
    asset, and then publishes it. The Registry webhook therefore fires only
