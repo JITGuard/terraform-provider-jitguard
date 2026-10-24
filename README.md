@@ -170,7 +170,10 @@ lives in `example/main.tf`.
 
 ## Releasing
 
-Releases are automated. Do **not** create or move a `v*` tag by hand.
+Releases are automated and **gated**. The release job only runs when the
+repository variable `RELEASES_ENABLED` is `true`; until then, merges to `main`
+and `next` still run CI but the release job is skipped. This prevents a release
+from being cut before the signing key and Registry are ready.
 
 1. Merge a Conventional-Commit PR to `main`.
 2. `semantic-release` computes the next version from the commits, pushes the
@@ -181,15 +184,21 @@ Releases are automated. Do **not** create or move a `v*` tag by hand.
    asset, and then publishes it. The Registry webhook therefore fires only
    after the release is complete.
 
+To cut the first release after enabling the gate, run the **Release** workflow
+manually (Actions → Release → Run workflow) on `main`. A rerun does not need an
+empty merge commit.
+
 Commit → version mapping: `fix`/`perf` → patch, `feat` → minor,
 `BREAKING CHANGE`/`!` → major, `build(deps)`/`chore(deps)` → patch. Other
 types (`docs`, `ci`, `test`, `refactor`, `chore`) do not release.
 
 ### Prerelease rehearsal
 
-Push to the `next` branch to create a prerelease (e.g. `v0.2.0-next.1`)
-without spending a stable version. Use it to prove the draft-publish handoff
-and the Registry ingest before the first `v0.2.x`.
+After setting `RELEASES_ENABLED=true`, create a `next` branch from `main` and
+run the **Release** workflow on `next` (or push a release-worthy commit to it).
+That creates a prerelease (e.g. `v0.2.0-next.1`) without spending a stable
+version. Use it to prove the draft-publish handoff and the Registry ingest
+before the first `v0.2.x`.
 
 ### Signing key
 
@@ -221,6 +230,8 @@ release** workflow with the tag.
   `next`.
 - Register the signing public key in the Terraform Registry.
 - Publish the provider from the Registry UI and verify the webhook.
+- Set the repository variable `RELEASES_ENABLED=true` only after the SSM
+  parameter is populated and the Registry public key is registered.
 - Require the `Verify`, `Test`, and `Conventional PR title` checks, require
   squash merges, and protect `main`.
 

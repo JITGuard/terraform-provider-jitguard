@@ -16,6 +16,9 @@ name: Release
 on:
   push:
     branches: [main, next]
+  # Allows the first release (or a rerun) to be started after the signing key
+  # and Registry are ready, without waiting for another merge.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -31,6 +34,10 @@ concurrency:
 jobs:
   release:
     name: Release
+    # Releases stay switched off until the prod signing parameter, the
+    # Registry public key and the public repository are ready. Set the
+    # repository variable RELEASES_ENABLED=true to enable them.
+    if: vars.RELEASES_ENABLED == 'true'
     runs-on: ubuntu-latest
     # Creates an auditable deployment record. Restrict the environment to the
     # release branches in GitHub; no reviewers are required for automatic
