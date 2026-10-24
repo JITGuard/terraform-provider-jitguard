@@ -31,7 +31,7 @@ terraform {
   required_version = ">= 1.11"
   required_providers {
     jitguard = {
-      source  = "JITGuard/jitguard"
+      source  = "jitguard/jitguard"
       version = "~> 0.2"
     }
   }
@@ -56,7 +56,7 @@ GitHub Release into Terraform's implicit filesystem mirror:
 
 This verifies the archive against the release's `SHA256SUMS` and installs it
 under
-`~/.terraform.d/plugins/registry.terraform.io/JITGuard/jitguard/<version>/<os>_<arch>/`.
+`~/.terraform.d/plugins/registry.terraform.io/jitguard/jitguard/<version>/<os>_<arch>/`.
 See `local-usage.md` for the walkthrough.
 
 ## Usage
@@ -223,12 +223,27 @@ release** workflow with the tag.
 
 ## Repository setup (one-time)
 
+### Registry namespace
+
+The Registry namespace is the GitHub organization that owns the repository,
+not the personal account used to sign in. Sign in with an account that
+administers `JITGuard`, authorize the Terraform Registry GitHub App for the
+`JITGuard` organization, and publish
+`JITGuard/terraform-provider-jitguard`. The provider address is
+`jitguard/jitguard` (Terraform normalizes namespaces and types to lowercase).
+
+Add the signing key under the **JITGuard organization** in
+Registry → User Settings → Signing Keys, not under a personal `barneyparker`
+namespace. A key registered only on the personal namespace will not validate
+this provider's releases.
+
 - Make the repository public; the Registry only ingests public repositories
   named `terraform-provider-{name}`.
 - Add topics such as `terraform`, `terraform-provider`, `jitguard`.
 - Create the `release` GitHub Environment and restrict it to `main` and
   `next`.
-- Register the signing public key in the Terraform Registry.
+- Register the JITGuard organization's signing public key in the Terraform
+  Registry.
 - Publish the provider from the Registry UI and verify the webhook.
 - Set the repository variable `RELEASES_ENABLED=true` only after the SSM
   parameter is populated and the Registry public key is registered.

@@ -2,7 +2,7 @@
 
 The Terraform Provider lets customers manage JIT Guard approval rules as code, through a Go-based custom provider that talks to the API-key-secured machine API. Without it, approval rules can only be managed via the web UI; the provider enables version-controlled, auditable, reproducible rule definitions aligned with infrastructure-as-code practices.
 
-The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework and plugin protocol v6. It is published on the Terraform Registry as `JITGuard/jitguard`. Releases are signed GitHub Releases that the Registry ingests; `scripts/download-provider.sh` remains available for pre-release and offline installs.
+The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework and plugin protocol v6. It is published on the Terraform Registry as `jitguard/jitguard`. Releases are signed GitHub Releases that the Registry ingests; `scripts/download-provider.sh` remains available for pre-release and offline installs.
 
 ## Boundaries
 
@@ -208,7 +208,7 @@ The API client layer provides:
 ### External systems
 
 - **GitHub Releases** — every release carries the per-platform zips, the Registry manifest, `SHA256SUMS`, and its GPG signature (`SHA256SUMS.sig`). Customers normally install via `terraform init`; `scripts/download-provider.sh` verifies the checksum and installs into Terraform's implicit filesystem mirror for pre-release/offline use.
-- **Terraform Registry** — the public provider is `JITGuard/jitguard`. The Registry validates the manifest (`protocol_versions: ["6.0"]`) and the GPG signature, then ingests the release when the draft is published.
+- **Terraform Registry** — the public provider is `jitguard/jitguard`. The Registry validates the manifest (`protocol_versions: ["6.0"]`) and the GPG signature, then ingests the release when the draft is published.
 
 ## Invariants
 

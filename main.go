@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/JITGuard/jitguard",
+		Address: "registry.terraform.io/jitguard/jitguard",
 		Debug:   debug,
 	}
 	if err := providerserver.Serve(context.Background(), provider.New(version), opts); err != nil {
