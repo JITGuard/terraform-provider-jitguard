@@ -165,7 +165,7 @@ Returns a list of all approval rules for the customer. Useful for discovering ex
 
 A singleton resource over the same settings object the web app edits:
 
-- `name`, `default_permission_set_arn`, `approval_expiry_hours`
+- `name`, `approval_expiry_hours`
 - one `PUT` per apply, sending only the attributes configured in HCL
 - import with the fixed ID `settings`
 - delete is a no-op on the server (the settings object cannot be deleted); Terraform drops it from state

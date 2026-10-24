@@ -47,7 +47,7 @@ for the walkthrough.
 - [jitguard_approval_rules](data-sources/approval_rules.md) — list the
   customer's approval rules.
 - [jitguard_organization_settings](resources/organization_settings.md) —
-  manage the organization name, default permission set and approval expiry.
+  manage the organization name and approval expiry.
 - [jitguard_integration_pagerduty](resources/integration_pagerduty.md) —
   manage the PagerDuty integration.
 - [jitguard_aws_connection](data-sources/aws_connection.md) — read JIT Guard's

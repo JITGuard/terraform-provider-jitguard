@@ -16,6 +16,7 @@ import (
 
 var _ resource.Resource = (*organizationSettingsResource)(nil)
 var _ resource.ResourceWithImportState = (*organizationSettingsResource)(nil)
+var _ resource.ResourceWithUpgradeState = (*organizationSettingsResource)(nil)
 
 type organizationSettingsResource struct {
 	client *Client
@@ -29,6 +30,15 @@ func NewOrganizationSettingsResource() resource.Resource {
 }
 
 type organizationSettingsModel struct {
+	ID                  types.String `tfsdk:"id"`
+	Name                types.String `tfsdk:"name"`
+	ApprovalExpiryHours types.Int64  `tfsdk:"approval_expiry_hours"`
+}
+
+// organizationSettingsModelV0 is the pre-#1391 shape. It exists only so the
+// state upgrader can decode a state written by provider <= v0.3.x, which still
+// carried default_permission_set_arn.
+type organizationSettingsModelV0 struct {
 	ID                      types.String `tfsdk:"id"`
 	Name                    types.String `tfsdk:"name"`
 	DefaultPermissionSetARN types.String `tfsdk:"default_permission_set_arn"`
@@ -41,9 +51,10 @@ func (r *organizationSettingsResource) Metadata(_ context.Context, _ resource.Me
 
 func (r *organizationSettingsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "The customer's JIT Guard organization settings: name, default permission set, " +
-			"and approval expiry window. This is a singleton resource; one per customer. Deleting it " +
-			"removes it from Terraform state but leaves the server settings unchanged.",
+		Version: 1,
+		Description: "The customer's JIT Guard organization settings: name and approval expiry " +
+			"window. This is a singleton resource; one per customer. Deleting it removes it from " +
+			"Terraform state but leaves the server settings unchanged.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -57,11 +68,6 @@ func (r *organizationSettingsResource) Schema(_ context.Context, _ resource.Sche
 					stringvalidator.LengthAtLeast(1),
 				},
 			},
-			"default_permission_set_arn": schema.StringAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "Default SSO permission set ARN. Set to an empty string to clear it.",
-			},
 			"approval_expiry_hours": schema.Int64Attribute{
 				Optional:    true,
 				Computed:    true,
@@ -69,6 +75,37 @@ func (r *organizationSettingsResource) Schema(_ context.Context, _ resource.Sche
 				Validators: []validator.Int64{
 					int64validator.Between(1, 720),
 				},
+			},
+		},
+	}
+}
+
+// UpgradeState drops the retired default_permission_set_arn attribute from
+// states written by provider <= v0.3.x (#1391). The value has no server-side
+// consumer, so the upgrade only has to remove it from Terraform state.
+func (r *organizationSettingsResource) UpgradeState(_ context.Context) map[int64]resource.StateUpgrader {
+	return map[int64]resource.StateUpgrader{
+		0: {
+			PriorSchema: &schema.Schema{
+				Attributes: map[string]schema.Attribute{
+					"id":                         schema.StringAttribute{Computed: true},
+					"name":                       schema.StringAttribute{Optional: true, Computed: true},
+					"default_permission_set_arn": schema.StringAttribute{Optional: true, Computed: true},
+					"approval_expiry_hours":      schema.Int64Attribute{Optional: true, Computed: true},
+				},
+			},
+			StateUpgrader: func(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {
+				var prior organizationSettingsModelV0
+				resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+				next := organizationSettingsModel{
+					ID:                  prior.ID,
+					Name:                prior.Name,
+					ApprovalExpiryHours: prior.ApprovalExpiryHours,
+				}
+				resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 			},
 		},
 	}
@@ -92,10 +129,6 @@ func (m organizationSettingsModel) updateFromConfig() SettingsUpdate {
 		value := m.Name.ValueString()
 		update.Name = &value
 	}
-	if !m.DefaultPermissionSetARN.IsNull() && !m.DefaultPermissionSetARN.IsUnknown() {
-		value := m.DefaultPermissionSetARN.ValueString()
-		update.PermissionSetARN = &value
-	}
 	if !m.ApprovalExpiryHours.IsNull() && !m.ApprovalExpiryHours.IsUnknown() {
 		value := m.ApprovalExpiryHours.ValueInt64()
 		update.ApprovalExpiryHours = &value
@@ -116,7 +149,6 @@ func (r *organizationSettingsResource) refresh(ctx context.Context, state *organ
 
 	state.ID = types.StringValue("settings")
 	state.Name = nullIfEmpty(settings.Name)
-	state.DefaultPermissionSetARN = nullIfEmpty(settings.PermissionSetARN)
 	state.ApprovalExpiryHours = types.Int64Value(settings.ApprovalExpiryHours)
 }
 
@@ -159,7 +191,6 @@ func (r *organizationSettingsResource) Read(ctx context.Context, req resource.Re
 
 	state.ID = types.StringValue("settings")
 	state.Name = nullIfEmpty(settings.Name)
-	state.DefaultPermissionSetARN = nullIfEmpty(settings.PermissionSetARN)
 	state.ApprovalExpiryHours = types.Int64Value(settings.ApprovalExpiryHours)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }

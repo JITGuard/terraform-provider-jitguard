@@ -26,7 +26,6 @@ func newFakeConfigAPI() *fakeConfigAPI {
 			Name:                "Acme",
 			NameSet:             true,
 			ApprovalExpiryHours: 8,
-			PermissionSetARN:    "",
 			ConnectionStatus:    "connected",
 			ManagementAccountID: "111111111111",
 			SSORegion:           "eu-west-1",
@@ -62,9 +61,6 @@ func (f *fakeConfigAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if update.Name != nil {
 			f.settings.Name = *update.Name
 			f.settings.NameSet = true
-		}
-		if update.PermissionSetARN != nil {
-			f.settings.PermissionSetARN = *update.PermissionSetARN
 		}
 		if update.ApprovalExpiryHours != nil {
 			f.settings.ApprovalExpiryHours = *update.ApprovalExpiryHours
@@ -108,9 +104,8 @@ func TestOrganizationSettingsResource(t *testing.T) {
 			{
 				Config: cfg + `
 resource "jitguard_organization_settings" "this" {
-  name                       = "Acme Corp"
-  approval_expiry_hours      = 12
-  default_permission_set_arn = "arn:aws:sso:::permissionSet/ps-1"
+  name                  = "Acme Corp"
+  approval_expiry_hours = 12
 }
 
 data "jitguard_aws_connection" "this" {}
@@ -121,7 +116,6 @@ data "jitguard_integrations" "this" {}
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "id", "settings"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "name", "Acme Corp"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "approval_expiry_hours", "12"),
-					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "default_permission_set_arn", "arn:aws:sso:::permissionSet/ps-1"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "connection_status", "connected"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "management_account_id", "111111111111"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "sso_region", "eu-west-1"),
@@ -131,7 +125,6 @@ data "jitguard_integrations" "this" {}
 				),
 			},
 			{
-				// Omit the default permission set: the update must not clear it.
 				Config: cfg + `
 resource "jitguard_organization_settings" "this" {
   name                  = "Acme Corp (updated)"
@@ -141,7 +134,6 @@ resource "jitguard_organization_settings" "this" {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "name", "Acme Corp (updated)"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "approval_expiry_hours", "24"),
-					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "default_permission_set_arn", "arn:aws:sso:::permissionSet/ps-1"),
 				),
 			},
 			{

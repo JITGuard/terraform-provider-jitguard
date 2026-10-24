@@ -252,7 +252,6 @@ func TestClient_GetSettings(t *testing.T) {
 			Name:                "Acme",
 			NameSet:             true,
 			ApprovalExpiryHours: 12,
-			PermissionSetARN:    "arn:aws:sso:::permissionSet/ps-1",
 			ConnectionStatus:    "connected",
 			ManagementAccountID: "111111111111",
 			SSORegion:           "eu-west-1",
@@ -308,22 +307,6 @@ func TestClient_UpdateSettings_PartialBody(t *testing.T) {
 	}
 	if _, ok := body["name"]; ok {
 		t.Fatalf("nil name must be omitted, got %#v", body)
-	}
-}
-
-func TestClient_UpdateSettings_ClearsPermissionSet(t *testing.T) {
-	var body map[string]any
-	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		json.NewEncoder(w).Encode(Settings{})
-	})
-
-	empty := ""
-	if _, err := client.UpdateSettings(context.Background(), SettingsUpdate{PermissionSetARN: &empty}); err != nil {
-		t.Fatalf("UpdateSettings: %v", err)
-	}
-	if body["permissionSetArn"] != "" {
-		t.Fatalf("expected an explicit empty permissionSetArn, got %#v", body)
 	}
 }
 

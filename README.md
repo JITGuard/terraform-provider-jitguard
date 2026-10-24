@@ -10,8 +10,8 @@ The provider currently manages:
   a concurrent edit on the server fails the apply loudly (412).
 - `jitguard_approval_rules` — list the customer's rules, useful for adopting
   existing rules into Terraform.
-- `jitguard_organization_settings` — the singleton organization name, default
-  permission set and approval expiry window.
+- `jitguard_organization_settings` — the singleton organization name and
+  approval expiry window.
 - `jitguard_integration_pagerduty` — the PagerDuty integration. The API key is
   write-only and never stored in state.
 - `jitguard_aws_connection` — read JIT Guard's AWS organization connection.
@@ -149,14 +149,14 @@ The singleton organization settings object. Import with the fixed ID
 
 ```hcl
 resource "jitguard_organization_settings" "this" {
-  name                       = "Acme Corp"
-  default_permission_set_arn = "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-22222222222222222222222222222222"
-  approval_expiry_hours      = 12
+  name                  = "Acme Corp"
+  approval_expiry_hours = 12
 }
 ```
 
-Omit an attribute to leave the server value unchanged. Set
-`default_permission_set_arn = ""` to clear it.
+Omit an attribute to leave the server value unchanged. Permission sets are
+chosen per promotion request and matched by `jitguard_approval_rule`; the
+organization settings no longer carry a default permission set.
 
 ### `jitguard_integration_pagerduty`
 
