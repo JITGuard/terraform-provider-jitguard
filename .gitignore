@@ -5,3 +5,4 @@
 **/.terraform.lock.hcl
 *.tfstate
 *.backup
+node_modules/

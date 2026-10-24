@@ -1,0 +1,27 @@
+name: Publish draft release
+
+# Recovery path for a release whose draft was created but not published (for
+# example, the final `gh release edit` step failed). Publishing fires the
+# Terraform Registry webhook, so only do this once the draft's assets look
+# complete.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing draft release tag, e.g. v0.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"

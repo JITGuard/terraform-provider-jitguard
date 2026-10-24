@@ -2,7 +2,7 @@
 
 The Terraform Provider lets customers manage JIT Guard approval rules as code, through a Go-based custom provider that talks to the API-key-secured machine API. Without it, approval rules can only be managed via the web UI; the provider enables version-controlled, auditable, reproducible rule definitions aligned with infrastructure-as-code practices.
 
-The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework. It is not published to the Terraform Registry yet — releases are published as GitHub Releases on `github.com/JITGuard/terraform-provider-jitguard`, and customers install them into Terraform's implicit filesystem mirror with the download script.
+The provider is distributed as a standalone Go binary, built on the Terraform Plugin Framework and plugin protocol v6. It is published on the Terraform Registry as `JITGuard/jitguard`. Releases are signed GitHub Releases that the Registry ingests; `scripts/download-provider.sh` remains available for pre-release and offline installs.
 
 ## Boundaries
 
@@ -13,7 +13,7 @@ The provider is distributed as a standalone Go binary, built on the Terraform Pl
 - **Provider data sources**: `jitguard_approval_rules` — paginated list of all customer rules
 - **Provider config**: endpoint URL, API key, TLS skip-verify
 - **Client layer**: HTTP client with bearer auth, request/response handling, error mapping
-- **Distribution**: GitHub Releases plus the download script that installs into the implicit filesystem mirror
+- **Distribution**: Terraform Registry, backed by signed GitHub Releases; the download script is a pre-release/offline fallback
 - **Reference documentation**: generated via `tfplugindocs`
 
 ### What does NOT belong here
@@ -207,8 +207,8 @@ The API client layer provides:
 
 ### External systems
 
-- **GitHub Releases** — the provider binary is published as per-platform zip archives plus a `SHA256SUMS` file on GitHub Releases. Customers install via `scripts/download-provider.sh`, which fetches the assets, verifies the checksum, and installs the binary into Terraform's implicit filesystem mirror.
-- **Terraform Registry** — not yet published; the binary is installed locally via the filesystem mirror. Publication requires a public repository plus reliable local + acceptance tests (CI gate).
+- **GitHub Releases** — every release carries the per-platform zips, the Registry manifest, `SHA256SUMS`, and its GPG signature (`SHA256SUMS.sig`). Customers normally install via `terraform init`; `scripts/download-provider.sh` verifies the checksum and installs into Terraform's implicit filesystem mirror for pre-release/offline use.
+- **Terraform Registry** — the public provider is `JITGuard/jitguard`. The Registry validates the manifest (`protocol_versions: ["6.0"]`) and the GPG signature, then ingests the release when the draft is published.
 
 ## Invariants
 
@@ -226,18 +226,25 @@ The API client layer provides:
 The provider ships two tiers of tests:
 
 - **Unit tests** (`go test`) — test the HTTP client layer, error mapping, and conversion logic against an in-process `httptest` fake. No credentials or network required.
-- **Framework acceptance tests** — run the real Terraform plugin protocol against an in-process fake of the machine API, covering create/update/import/data-source/delete flows. These require the `TF_ACC` environment variable.
+- **Framework acceptance tests** — run the real Terraform plugin protocol against an in-process fake of the machine API, covering create/update/import/data-source/delete flows. These require the `TF_ACC` environment variable; CI sets it, so a regression cannot hide behind a skipped test.
 
 For end-to-end validation, developers can run `terraform plan`/`apply` against a real environment with a minted API key.
 
 ## Distribution
 
-The provider is published as GitHub Releases:
+The provider is published to the Terraform Registry from signed GitHub Releases:
 
-1. **Build** — `scripts/build-release.sh` builds per-platform zip archives (linux/darwin × amd64/arm64) plus a `SHA256SUMS` file
-2. **Publish** — pushing a `v*` tag runs `.github/workflows/release.yml`, which creates a GitHub Release with those assets
-3. **Install** — customers run `scripts/download-provider.sh`, which fetches the release assets, verifies the checksum, and installs the binary into Terraform's implicit filesystem mirror
-4. **Docs** — `tfplugindocs` generates the reference documentation from the provider schema into `docs/`
+1. **Version** — merging a Conventional-Commit PR to `main` runs `semantic-release`, which computes the next SemVer version from the commits, generates the release notes, and pushes the tag. The `next` branch produces prereleases.
+2. **Build** — GoReleaser builds per-platform zip archives (linux/darwin × amd64/arm64), the `terraform-registry-manifest.json` release asset, and `SHA256SUMS`; it signs the checksums with the prod signing key from SSM.
+3. **Draft + publish** — `semantic-release` creates a draft GitHub Release, uploads every signed asset, and then publishes it, so the Registry webhook only fires once the release is complete.
+4. **Install** — customers run `terraform init`; `scripts/download-provider.sh` remains the pre-release/offline fallback.
+5. **Docs** — `tfplugindocs` generates the reference documentation from the provider schema into `docs/`.
+
+The signing key lives in the prod-only SSM parameter
+`/jitguard/prod/terraform-provider-jitguard/gpg-signing-key`, created by
+`jitguard-core` as a `placeholder` with `ignore_changes = [value]` and
+`prevent_destroy`, then populated out-of-band. The Terraform Registry must
+have the matching public key registered before the first release.
 
 ## Related Decisions
 

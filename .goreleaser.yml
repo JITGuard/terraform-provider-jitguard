@@ -1,0 +1,83 @@
+# GoReleaser configuration for the Terraform Registry.
+#
+# The Release workflow runs `goreleaser release --clean --skip=publish`:
+# GoReleaser builds and signs the artifacts; semantic-release creates the
+# GitHub Release as a draft, uploads the assets, then publishes it.
+#
+# Keep the archive, binary, manifest and checksum names in the exact shape the
+# Terraform Registry expects:
+#   terraform-provider-jitguard_<version>_<os>_<arch>.zip
+#   terraform-provider-jitguard_v<version>          (binary inside the zip)
+#   terraform-provider-jitguard_<version>_manifest.json
+#   terraform-provider-jitguard_<version>_SHA256SUMS
+#   terraform-provider-jitguard_<version>_SHA256SUMS.sig
+version: 2
+
+project_name: terraform-provider-jitguard
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    hooks:
+      post:
+        # GoReleaser adds the manifest to the checksum but does not copy it
+        # into dist/. The Registry expects it as a release asset under its
+        # versioned name, and semantic-release uploads everything in dist/.
+        - sh -c 'cp terraform-registry-manifest.json "dist/{{ .ProjectName }}_{{ .Version }}_manifest.json"'
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    binary: "{{ .ProjectName }}_v{{ .Version }}"
+
+archives:
+  - formats:
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  algorithm: sha256
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+
+signs:
+  - artifacts: checksum
+    args:
+      - "--batch"
+      # The passphrase is read from a file in the ephemeral runner, never an
+      # argument or an environment variable.
+      - "--pinentry-mode"
+      - "loopback"
+      - "--passphrase-file"
+      - "{{ .Env.GPG_PASSPHRASE_FILE }}"
+      - "--local-user"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+
+release:
+  # semantic-release creates and publishes the GitHub Release. Keep this draft
+  # so a manual `goreleaser release` can never publish an un-reviewed release.
+  draft: true
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+
+# semantic-release owns the release notes.
+changelog:
+  disable: true

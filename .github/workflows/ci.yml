@@ -1,19 +1,17 @@
 name: CI
 
-# Verify the JIT Guard Terraform provider on pull requests and pushes.
-# Publishing is handled separately by release.yml on version tags.
+# Verify the JIT Guard Terraform provider on every pull request and push.
+# Publishing is handled by release.yml from main (or the next prerelease branch).
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, next]
   push:
-    branches: [main]
+    branches: [main, next]
   workflow_dispatch:
 
 permissions:
   contents: read
-  # gitleaks-action reads PR commits/files on pull_request events.
-  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,30 +20,29 @@ concurrency:
 jobs:
   security:
     name: Secret scan
-    runs-on: arc-runner-set
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      # Dependabot PRs are gated out: GitHub withholds all Actions secrets from
-      # dependabot-triggered pull_request runs, so GITLEAKS_LICENSE is empty and
-      # gitleaks-action v3 hard-errors on an org repo. Dependabot only touches
-      # dependency manifests, and the push-to-main run scans the merge commit.
-      - name: Gitleaks — secret scanning
-        if: github.actor != 'dependabot[bot]'
-        uses: gitleaks/gitleaks-action@v3
+
+      # Run the OSS CLI rather than the licensed action so fork PRs (which
+      # never receive repository secrets) are scanned too.
+      - name: Install gitleaks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-          GITLEAKS_CONFIG: jitguard-api-key.toml
-          # Root self-hosted runner (HOME=/root) vs workspace under
-          # /home/runner/_work: point HOME at the workspace parent so
-          # gitleaks-action accepts results.sarif.
-          HOME: ${{ github.workspace }}/..
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" gitleaks
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Gitleaks — secret scanning
+        run: gitleaks detect --source . --config jitguard-api-key.toml --redact --no-banner
 
   verify:
     name: Verify
-    runs-on: arc-runner-set
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -55,23 +52,71 @@ jobs:
           cache: true
 
       - name: Format check
-        run: test -z "$(gofmt -l .)"
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
 
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test ./...
-
       - name: Build
         run: go build ./...
+
+      - name: Validate Registry manifest
+        run: |
+          jq -e '.version == 1 and .metadata.protocol_versions == ["6.0"]' terraform-registry-manifest.json
 
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.0
           terraform_wrapper: false
 
+      - name: Terraform format check
+        run: terraform fmt -check -recursive example
+
       - name: Verify docs are up to date
         run: |
-          go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.21.0 generate
+          go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.25.0 generate
           test -z "$(git status --porcelain docs/)" || { echo "docs/ is out of date — run 'make docs' and commit"; exit 1; }
+
+  test:
+    name: Test (Terraform ${{ matrix.terraform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported floor plus the current release used by the example.
+        terraform: ["1.11.x", "1.14.x"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+
+      # TF_ACC runs the framework acceptance tests against the in-process fake
+      # machine API. No credentials or network are required.
+      - name: Test
+        run: TF_ACC=1 go test ./...
+
+  release-config:
+    name: Release config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate semantic-release config
+        run: node -e "JSON.parse(require('fs').readFileSync('.releaserc.json', 'utf8'))"
+
+      - name: Install release tooling
+        run: npm ci --ignore-scripts
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check

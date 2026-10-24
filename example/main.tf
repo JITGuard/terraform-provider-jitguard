@@ -1,9 +1,9 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.11"
   required_providers {
     jitguard = {
       source  = "registry.terraform.io/JITGuard/jitguard"
-      version = "0.1.0"
+      version = "~> 0.2"
     }
   }
 }
@@ -15,11 +15,11 @@ provider "jitguard" {
 
 # 1. Auto-approve by exact account ID + named permission set ARN.
 resource "jitguard_approval_rule" "sre_emergency" {
-  name           = "SRE Emergency (Example)"
-  description    = "On-call SREs are auto-approved into the production account."
-  auto_approve   = true
-  enabled        = true
-  sso_group_ids  = ["grp-sre", "grp-oncall"]
+  name          = "SRE Emergency (Example)"
+  description   = "On-call SREs are auto-approved into the production account."
+  auto_approve  = true
+  enabled       = true
+  sso_group_ids = ["grp-sre", "grp-oncall"]
 
   accounts {
     type       = "account_id"
@@ -64,8 +64,8 @@ resource "jitguard_approval_rule" "sandbox_ou" {
   sso_group_ids = ["*"]
 
   accounts {
-    type   = "ou_descendant"
-    ou_id  = "ou-sandb-2c3d4e5f"
+    type  = "ou_descendant"
+    ou_id = "ou-sandb-2c3d4e5f"
   }
 
   permission_sets {

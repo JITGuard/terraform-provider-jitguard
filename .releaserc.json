@@ -1,0 +1,64 @@
+{
+  "branches": [
+    "main",
+    {
+      "name": "next",
+      "prerelease": true
+    }
+  ],
+  "tagFormat": "v${version}",
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits",
+        "releaseRules": [
+          {
+            "type": "build",
+            "scope": "deps",
+            "release": "patch"
+          },
+          {
+            "type": "chore",
+            "scope": "deps",
+            "release": "patch"
+          }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "publishCmd": "goreleaser release --clean --skip=publish"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false,
+        "assets": [
+          {
+            "path": "dist/*.zip"
+          },
+          {
+            "path": "dist/*_SHA256SUMS"
+          },
+          {
+            "path": "dist/*_SHA256SUMS.sig"
+          },
+          {
+            "path": "dist/*_manifest.json"
+          }
+        ]
+      }
+    ]
+  ]
+}
