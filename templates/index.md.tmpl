@@ -46,6 +46,14 @@ for the walkthrough.
   rule (create / read / update / delete / import).
 - [jitguard_approval_rules](data-sources/approval_rules.md) — list the
   customer's approval rules.
+- [jitguard_organization_settings](resources/organization_settings.md) —
+  manage the organization name, default permission set and approval expiry.
+- [jitguard_integration_pagerduty](resources/integration_pagerduty.md) —
+  manage the PagerDuty integration.
+- [jitguard_aws_connection](data-sources/aws_connection.md) — read JIT Guard's
+  AWS connection status.
+- [jitguard_integrations](data-sources/integrations.md) — read Slack and
+  PagerDuty integration status.
 
 Look up AWS account IDs, OU IDs, permission-set ARNs and Identity Store group
 IDs with the

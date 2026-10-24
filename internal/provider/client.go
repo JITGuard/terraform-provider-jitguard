@@ -313,3 +313,127 @@ func (c *Client) DeleteRule(ctx context.Context, ruleID, ifMatch string) (bool, 
 		return false, apiErr
 	}
 }
+
+const (
+	settingsPath     = "/api/customer/api/settings"
+	integrationsPath = "/api/customer/api/integrations"
+)
+
+// PermissionSetSummary is one entry in the settings response. The provider
+// ignores it; the AWS data sources own the permission-set catalog.
+type PermissionSetSummary struct {
+	ARN         string `json:"arn"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// Settings is the machine API settings response. It includes the AWS
+// connection facts because the same route serves the aws_connection data
+// source; the settings resource only manages the mutable fields.
+type Settings struct {
+	Name                string                 `json:"name"`
+	NameSet             bool                   `json:"nameSet"`
+	ApprovalExpiryHours int64                  `json:"approvalExpiryHours"`
+	PermissionSetARN    string                 `json:"permissionSetArn"`
+	ConnectionStatus    string                 `json:"connectionStatus"`
+	ManagementAccountID string                 `json:"managementAccountId"`
+	SSORegion           string                 `json:"ssoRegion"`
+	SSOInstanceARN      string                 `json:"ssoInstanceArn"`
+	PermissionSets      []PermissionSetSummary `json:"permissionSets"`
+}
+
+// SettingsUpdate is a partial update. Nil fields are omitted, so a resource
+// that only configures one attribute cannot clobber the others. A non-nil
+// pointer to "" deliberately clears the default permission set.
+type SettingsUpdate struct {
+	Name                *string `json:"name,omitempty"`
+	PermissionSetARN    *string `json:"permissionSetArn,omitempty"`
+	ApprovalExpiryHours *int64  `json:"approvalExpiryHours,omitempty"`
+}
+
+// GetSettings fetches the customer settings. Returns (nil, nil) when the API
+// reports the customer does not exist (404).
+func (c *Client) GetSettings(ctx context.Context) (*Settings, error) {
+	resp, body, err := c.request(ctx, http.MethodGet, settingsPath, nil, []int{http.StatusOK, http.StatusNotFound})
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	var settings Settings
+	if err := json.Unmarshal(body, &settings); err != nil {
+		return nil, fmt.Errorf("decode settings: %w", err)
+	}
+	return &settings, nil
+}
+
+// UpdateSettings applies a partial settings update and returns the new state.
+func (c *Client) UpdateSettings(ctx context.Context, update SettingsUpdate) (*Settings, error) {
+	_, body, err := c.request(ctx, http.MethodPut, settingsPath, update, []int{http.StatusOK})
+	if err != nil {
+		return nil, err
+	}
+	var settings Settings
+	if err := json.Unmarshal(body, &settings); err != nil {
+		return nil, fmt.Errorf("decode settings: %w", err)
+	}
+	return &settings, nil
+}
+
+// SlackIntegration is the read-only Slack status. Slack is OAuth-installed and
+// cannot be managed by the machine API.
+type SlackIntegration struct {
+	Connected bool   `json:"connected"`
+	TeamID    string `json:"teamId"`
+	TeamName  string `json:"teamName"`
+}
+
+// PagerDutyIntegration is the PagerDuty status. The key itself is never
+// returned; masked_api_key is the only server-side view.
+type PagerDutyIntegration struct {
+	Connected    bool   `json:"connected"`
+	MaskedAPIKey string `json:"maskedApiKey"`
+}
+
+// Integrations is the machine API integrations response.
+type Integrations struct {
+	Slack     SlackIntegration     `json:"slack"`
+	PagerDuty PagerDutyIntegration `json:"pagerDuty"`
+}
+
+// GetIntegrations fetches the Slack and PagerDuty status.
+func (c *Client) GetIntegrations(ctx context.Context) (*Integrations, error) {
+	_, body, err := c.request(ctx, http.MethodGet, integrationsPath, nil, []int{http.StatusOK})
+	if err != nil {
+		return nil, err
+	}
+	var integrations Integrations
+	if err := json.Unmarshal(body, &integrations); err != nil {
+		return nil, fmt.Errorf("decode integrations: %w", err)
+	}
+	return &integrations, nil
+}
+
+// SetPagerDutyIntegration validates and stores the PagerDuty API key. The API
+// validates the key against PagerDuty before accepting it.
+func (c *Client) SetPagerDutyIntegration(ctx context.Context, apiKey string) (*Integrations, error) {
+	return c.updateIntegrations(ctx, map[string]any{"pagerDutyApiKey": apiKey})
+}
+
+// DisconnectPagerDutyIntegration removes the stored PagerDuty key.
+func (c *Client) DisconnectPagerDutyIntegration(ctx context.Context) (*Integrations, error) {
+	return c.updateIntegrations(ctx, map[string]any{"disconnectPagerDuty": true})
+}
+
+func (c *Client) updateIntegrations(ctx context.Context, update map[string]any) (*Integrations, error) {
+	_, body, err := c.request(ctx, http.MethodPut, integrationsPath, update, []int{http.StatusOK})
+	if err != nil {
+		return nil, err
+	}
+	var integrations Integrations
+	if err := json.Unmarshal(body, &integrations); err != nil {
+		return nil, fmt.Errorf("decode integrations: %w", err)
+	}
+	return &integrations, nil
+}

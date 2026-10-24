@@ -241,3 +241,161 @@ func TestClient_DeleteRule_NotFound(t *testing.T) {
 		t.Fatal("expected deleted=false for 404")
 	}
 }
+
+func TestClient_GetSettings(t *testing.T) {
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/customer/api/settings" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(Settings{
+			Name:                "Acme",
+			NameSet:             true,
+			ApprovalExpiryHours: 12,
+			PermissionSetARN:    "arn:aws:sso:::permissionSet/ps-1",
+			ConnectionStatus:    "connected",
+			ManagementAccountID: "111111111111",
+			SSORegion:           "eu-west-1",
+			SSOInstanceARN:      "arn:aws:sso:::instance/ssoins-1",
+		})
+	})
+
+	settings, err := client.GetSettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if settings == nil {
+		t.Fatal("GetSettings returned nil")
+	}
+	if settings.Name != "Acme" || settings.ApprovalExpiryHours != 12 || settings.ConnectionStatus != "connected" {
+		t.Fatalf("unexpected settings: %+v", settings)
+	}
+}
+
+func TestClient_GetSettings_NotFound(t *testing.T) {
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	settings, err := client.GetSettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if settings != nil {
+		t.Fatalf("expected nil for 404, got %+v", settings)
+	}
+}
+
+func TestClient_UpdateSettings_PartialBody(t *testing.T) {
+	var body map[string]any
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/customer/api/settings" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		json.NewEncoder(w).Encode(Settings{Name: "Acme", ApprovalExpiryHours: 12})
+	})
+
+	expiry := int64(12)
+	if _, err := client.UpdateSettings(context.Background(), SettingsUpdate{ApprovalExpiryHours: &expiry}); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	if len(body) != 1 || body["approvalExpiryHours"] != float64(12) {
+		t.Fatalf("expected only approvalExpiryHours, got %#v", body)
+	}
+	if _, ok := body["name"]; ok {
+		t.Fatalf("nil name must be omitted, got %#v", body)
+	}
+}
+
+func TestClient_UpdateSettings_ClearsPermissionSet(t *testing.T) {
+	var body map[string]any
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body)
+		json.NewEncoder(w).Encode(Settings{})
+	})
+
+	empty := ""
+	if _, err := client.UpdateSettings(context.Background(), SettingsUpdate{PermissionSetARN: &empty}); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	if body["permissionSetArn"] != "" {
+		t.Fatalf("expected an explicit empty permissionSetArn, got %#v", body)
+	}
+}
+
+func TestClient_GetIntegrations(t *testing.T) {
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/customer/api/integrations" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(Integrations{
+			Slack:     SlackIntegration{Connected: true, TeamID: "T1", TeamName: "acme"},
+			PagerDuty: PagerDutyIntegration{Connected: true, MaskedAPIKey: "****-123"},
+		})
+	})
+
+	integrations, err := client.GetIntegrations(context.Background())
+	if err != nil {
+		t.Fatalf("GetIntegrations: %v", err)
+	}
+	if !integrations.Slack.Connected || integrations.Slack.TeamName != "acme" {
+		t.Fatalf("unexpected slack: %+v", integrations.Slack)
+	}
+	if !integrations.PagerDuty.Connected || integrations.PagerDuty.MaskedAPIKey != "****-123" {
+		t.Fatalf("unexpected pagerduty: %+v", integrations.PagerDuty)
+	}
+}
+
+func TestClient_SetPagerDutyIntegration(t *testing.T) {
+	var body map[string]any
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/customer/api/integrations" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		json.NewEncoder(w).Encode(Integrations{PagerDuty: PagerDutyIntegration{Connected: true}})
+	})
+
+	if _, err := client.SetPagerDutyIntegration(context.Background(), "pd-key"); err != nil {
+		t.Fatalf("SetPagerDutyIntegration: %v", err)
+	}
+	if body["pagerDutyApiKey"] != "pd-key" {
+		t.Fatalf("unexpected body: %#v", body)
+	}
+}
+
+func TestClient_DisconnectPagerDutyIntegration(t *testing.T) {
+	var body map[string]any
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body)
+		json.NewEncoder(w).Encode(Integrations{})
+	})
+
+	if _, err := client.DisconnectPagerDutyIntegration(context.Background()); err != nil {
+		t.Fatalf("DisconnectPagerDutyIntegration: %v", err)
+	}
+	if body["disconnectPagerDuty"] != true {
+		t.Fatalf("unexpected body: %#v", body)
+	}
+}
+
+func TestClient_SetPagerDutyIntegration_InvalidKey(t *testing.T) {
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Bad Request", "message": "Invalid PagerDuty API key"})
+	})
+
+	_, err := client.SetPagerDutyIntegration(context.Background(), "bad")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "Invalid PagerDuty API key") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

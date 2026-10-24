@@ -9,8 +9,8 @@ The provider is distributed as a standalone Go binary, built on the Terraform Pl
 ### What belongs here
 
 - **Provider code**: the Terraform provider source — Go source, schemas, client, conversion logic
-- **Provider resources**: `jitguard_approval_rule` — full CRUD plus import
-- **Provider data sources**: `jitguard_approval_rules` — paginated list of all customer rules
+- **Provider resources**: `jitguard_approval_rule`, `jitguard_organization_settings`, `jitguard_integration_pagerduty`
+- **Provider data sources**: `jitguard_approval_rules`, `jitguard_aws_connection`, `jitguard_integrations`
 - **Provider config**: endpoint URL, API key, TLS skip-verify
 - **Client layer**: HTTP client with bearer auth, request/response handling, error mapping
 - **Distribution**: Terraform Registry, backed by signed GitHub Releases; the download script is a pre-release/offline fallback
@@ -18,7 +18,7 @@ The provider is distributed as a standalone Go binary, built on the Terraform Pl
 
 ### What does NOT belong here
 
-- The machine API lambda itself (`customer-rules-api` in the backend domain) — the provider is a *consumer* of that API
+- The machine API lambdas (`customer-rules-api`, `customer-settings-api`, `comms-config-api`) — the provider is a *consumer* of those APIs
 - API key minting or lifecycle management (`customer-api-keys` lambda, web UI Keys section) — keys are created by the customer outside the provider
 - Approval rule evaluation logic (the rule engine in the backend domain) — the provider only defines rules, it never evaluates them
 - AWS infrastructure resources — the provider configures JIT Guard, not AWS
@@ -97,7 +97,13 @@ The provider follows the standard Terraform plugin lifecycle:
 
 ### Machine API path
 
-The provider appends `/api/customer/api/rules` to the configured endpoint. The full public path is `/api/customer/api/rules` — the `api` segment is the API Gateway stage name, and `/customer/api/rules` is the gateway route. This path is distinct from the web UI's `/customer/rules` routes (which use JWT authentication), keeping the two auth models separate and testable.
+The provider appends one of three API-key machine paths to the configured endpoint:
+
+- `/api/customer/api/rules` — approval-rule CRUDL
+- `/api/customer/api/settings` — organization settings and AWS connection facts
+- `/api/customer/api/integrations` — Slack/PagerDuty status and PagerDuty writes
+
+The `api` segment is the API Gateway stage name; `/customer/api/...` is the gateway route. These paths are distinct from the web UI's `/customer/...` routes (which use JWT authentication), keeping the two auth models separate and testable. `customer-settings-api` and `comms-config-api` are separate Lambdas from the JWT handlers, each validating the API key itself.
 
 ## Key Abstractions
 
@@ -105,7 +111,7 @@ The provider appends `/api/customer/api/rules` to the configured endpoint. The f
 
 Three attributes configure every JIT Guard provider instance:
 
-- **`endpoint`** (required) — the API base URL, allowing any environment (production, staging, local) to be targeted. This is the origin only; the provider appends the `/api/customer/api/rules` path.
+- **`endpoint`** (required) — the API base URL, allowing any environment (production, staging, local) to be targeted. This is the origin only; the provider appends the machine API paths.
 - **`api_key`** (optional, sensitive) — a `bg_sk_live_...` key minted in the web app. Falls back to the `JITGUARD_API_KEY` environment variable. Only a hash is stored server-side; a lost key must be revoked and re-created. The key format follows the `apikeys.guide` convention: `bg_sk_live_<secret>_<checksum>` with 256 bits of entropy.
 - **`skip_verify`** (optional) — disables TLS certificate verification for local testing against self-signed endpoints.
 
@@ -155,6 +161,29 @@ Each `permission_sets` block defines a matching condition:
 
 Returns a list of all approval rules for the customer. Useful for discovering existing rules before adopting them into Terraform state. The data source paginates through all server-side pages automatically (cursor-based pagination) and returns the full list.
 
+### `jitguard_organization_settings` resource
+
+A singleton resource over the same settings object the web app edits:
+
+- `name`, `default_permission_set_arn`, `approval_expiry_hours`
+- one `PUT` per apply, sending only the attributes configured in HCL
+- import with the fixed ID `settings`
+- delete is a no-op on the server (the settings object cannot be deleted); Terraform drops it from state
+
+### `jitguard_integration_pagerduty` resource
+
+PagerDuty is the only integration the machine API can write. The key is a
+write-only Terraform attribute: it is sent on apply but never stored in state
+or plan. `api_key_version` is the rotation trigger. Deleting the resource
+disconnects PagerDuty. Slack is OAuth-installed and read-only.
+
+### `jitguard_aws_connection` and `jitguard_integrations` data sources
+
+`jitguard_aws_connection` exposes JIT Guard's connection facts (status,
+management account, SSO region/instance) without pretending to own AWS
+accounts, OUs, permission sets or groups. `jitguard_integrations` exposes Slack
+and PagerDuty status; the PagerDuty key is only ever returned masked.
+
 ### Optimistic concurrency model
 
 The provider uses `If-Match`/ETag headers for update and delete operations:
@@ -201,9 +230,11 @@ The API client layer provides:
 
 ### Downstream (what this calls)
 
-- **customer-rules-api lambda** — the machine API endpoint at `/api/customer/api/rules` that performs CRUDL operations on rules. The provider sends authenticated HTTP requests with a `Bearer` token. The lambda validates the API key via `requireApiKey`, which hashes the key and looks it up in DynamoDB, checking status and environment match.
-- **DynamoDB main table** — the machine API reads/writes `RULE#<ruleId>` items; the provider never touches DynamoDB directly
-- **DynamoDB customer_audit table** — all rule mutations are audited by the machine API with an `actorType: 'service'` shape
+- **customer-rules-api lambda** — `/api/customer/api/rules`, API-key authenticated CRUDL for approval rules.
+- **customer-settings-api lambda** — `/api/customer/api/settings`, API-key authenticated settings read/write.
+- **comms-config-api lambda** — `/api/customer/api/integrations`, API-key authenticated Slack/PagerDuty status and PagerDuty writes.
+- **DynamoDB main table** — the machine APIs read/write `RULE#`, settings and integration records; the provider never touches DynamoDB directly
+- **DynamoDB customer_audit table** — all machine mutations are audited by the owning Lambda with an `actorType: 'service'` shape
 
 ### External systems
 
@@ -213,6 +244,9 @@ The API client layer provides:
 ## Invariants
 
 - **API key scoping**: each API key is scoped to a single customer; the provider can only manage rules for the customer that minted the key. There is no cross-customer access.
+- **Settings are singleton and partial**: one settings object per customer; every apply sends only the attributes configured in HCL, so a field the resource does not manage is left untouched. The settings resource has no server-side delete.
+- **PagerDuty key is write-only**: Terraform never stores the PagerDuty API key in state or plan. `api_key_version` is the rotation trigger; the API only returns a masked key.
+- **Slack is OAuth-only**: the machine API can read Slack status but cannot install, connect or disconnect it. Those remain web-app actions.
 - **Full replacement updates**: every `Update` sends the complete rule object, not a diff. The server replaces the entire rule, preserving `createdAt` and bumping `updatedAt`.
 - **Optimistic concurrency**: all mutations require a valid `If-Match` header. Stale or missing headers fail the request (412 or 428). The provider always reads before writing.
 - **No state drift detection**: the provider does not detect drift beyond what Terraform's refresh cycle provides. If a rule is modified outside Terraform (web UI, direct API call), the next plan will show a diff.

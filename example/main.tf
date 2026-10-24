@@ -100,3 +100,32 @@ data "jitguard_approval_rules" "all" {}
 output "rule_details" {
   value = data.jitguard_approval_rules.all
 }
+
+# Organization settings: singleton per customer.
+resource "jitguard_organization_settings" "this" {
+  name                  = "JIT Guard Example Org"
+  approval_expiry_hours = 12
+}
+
+# PagerDuty is the only integration Terraform can manage. The key is
+# write-only; bump api_key_version to rotate it.
+variable "pagerduty_api_key" {
+  type      = string
+  sensitive = true
+}
+
+resource "jitguard_integration_pagerduty" "this" {
+  api_key         = var.pagerduty_api_key
+  api_key_version = 1
+}
+
+data "jitguard_aws_connection" "this" {}
+data "jitguard_integrations" "this" {}
+
+output "jitguard_connection" {
+  value = data.jitguard_aws_connection.this
+}
+
+output "jitguard_integrations" {
+  value = data.jitguard_integrations.this
+}
