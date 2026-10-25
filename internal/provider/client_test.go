@@ -250,7 +250,6 @@ func TestClient_GetSettings(t *testing.T) {
 		}
 		json.NewEncoder(w).Encode(Settings{
 			Name:                "Acme",
-			NameSet:             true,
 			ApprovalExpiryHours: 12,
 			ConnectionStatus:    "connected",
 			ManagementAccountID: "111111111111",
