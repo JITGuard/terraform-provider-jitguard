@@ -35,22 +35,24 @@ resource "jitguard_approval_rule" "sre_emergency" {
 
 ## Validation notes
 
-- `name` is required and must be a non-empty string (max 80 characters).
+- `name` is required; the schema does not impose a length limit.
 - `auto_approve` is required: `true` (grant immediately) or `false` (require
   approval).
-- `sso_group_ids` is required and must be non-empty.
-- `accounts` and `permission_sets` are required and must each contain at
-  least one block.
-- When `auto_approve = false`, `approver_group_ids` is required and must be
-  non-empty.
+- `sso_group_ids` is required, but the schema does not require it to contain
+  at least one group.
+- `accounts` and `permission_sets` are optional nested blocks; neither is
+  required to be present or non-empty.
+- When `auto_approve = false`, `approver_group_ids` must be provided and
+  non-empty. The provider validates this before making an API call.
 - Account conditions match by AWS account ID (`account_id`), OU ID
   (`ou_id`), or tag; permission-set conditions match by SSO permission set
   ARN (`arn`, or `"*"` for any) or tag. `account_id`, `ou_id`, and `arn` are
-  shape-validated.
-- Each `accounts` block requires exactly the fields for its `type` (see
-  below); each `permission_sets` block likewise. The provider's `type`
-  validators reject a block whose type-specific field is missing, and the
-  API returns a precise 400 `{ error, field }` if a condition is incomplete.
+  shape-validated when set.
+- Each `type` must be one of the accepted values (`account_id`,
+  `account_tag`, `ou_descendant` for accounts; `permission_set_arn`,
+  `permission_set_tag` for permission sets). The provider does not enforce
+  that a block's type-specific field is present; the API returns a precise
+  400 `{ error, field }` for an incomplete condition.
 
 {{ .SchemaMarkdown }}
 
