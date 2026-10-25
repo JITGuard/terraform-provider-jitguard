@@ -319,26 +319,16 @@ const (
 	integrationsPath = "/api/customer/api/integrations"
 )
 
-// PermissionSetSummary is one entry in the settings response. The provider
-// ignores it; the AWS data sources own the permission-set catalog.
-type PermissionSetSummary struct {
-	ARN         string `json:"arn"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
 // Settings is the machine API settings response. It includes the AWS
 // connection facts because the same route serves the aws_connection data
 // source; the settings resource only manages the mutable fields.
 type Settings struct {
-	Name                string                 `json:"name"`
-	NameSet             bool                   `json:"nameSet"`
-	ApprovalExpiryHours int64                  `json:"approvalExpiryHours"`
-	ConnectionStatus    string                 `json:"connectionStatus"`
-	ManagementAccountID string                 `json:"managementAccountId"`
-	SSORegion           string                 `json:"ssoRegion"`
-	SSOInstanceARN      string                 `json:"ssoInstanceArn"`
-	PermissionSets      []PermissionSetSummary `json:"permissionSets"`
+	Name                string `json:"name"`
+	ApprovalExpiryHours int64  `json:"approvalExpiryHours"`
+	ConnectionStatus    string `json:"connectionStatus"`
+	ManagementAccountID string `json:"managementAccountId"`
+	SSORegion           string `json:"ssoRegion"`
+	SSOInstanceARN      string `json:"ssoInstanceArn"`
 }
 
 // SettingsUpdate is a partial update. Nil fields are omitted, so a resource

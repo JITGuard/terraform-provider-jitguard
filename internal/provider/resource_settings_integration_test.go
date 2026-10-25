@@ -24,13 +24,11 @@ func newFakeConfigAPI() *fakeConfigAPI {
 	return &fakeConfigAPI{
 		settings: Settings{
 			Name:                "Acme",
-			NameSet:             true,
 			ApprovalExpiryHours: 8,
 			ConnectionStatus:    "connected",
 			ManagementAccountID: "111111111111",
 			SSORegion:           "eu-west-1",
 			SSOInstanceARN:      "arn:aws:sso:::instance/ssoins-1111111111111111",
-			PermissionSets:      []PermissionSetSummary{},
 		},
 		integrations: Integrations{
 			Slack:     SlackIntegration{Connected: true, TeamID: "T12345", TeamName: "acme"},
@@ -60,7 +58,6 @@ func (f *fakeConfigAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if update.Name != nil {
 			f.settings.Name = *update.Name
-			f.settings.NameSet = true
 		}
 		if update.ApprovalExpiryHours != nil {
 			f.settings.ApprovalExpiryHours = *update.ApprovalExpiryHours
