@@ -48,9 +48,9 @@ func (f *fakeConfigAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	switch {
-	case r.Method == http.MethodGet && r.URL.Path == "/api/customer/api/settings":
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/api/settings":
 		json.NewEncoder(w).Encode(f.settings)
-	case r.Method == http.MethodPut && r.URL.Path == "/api/customer/api/settings":
+	case r.Method == http.MethodPut && r.URL.Path == "/api/v1/customer/api/settings":
 		var update SettingsUpdate
 		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -63,9 +63,9 @@ func (f *fakeConfigAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.settings.ApprovalExpiryHours = *update.ApprovalExpiryHours
 		}
 		json.NewEncoder(w).Encode(f.settings)
-	case r.Method == http.MethodGet && r.URL.Path == "/api/customer/api/integrations":
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/api/integrations":
 		json.NewEncoder(w).Encode(f.integrations)
-	case r.Method == http.MethodPut && r.URL.Path == "/api/customer/api/integrations":
+	case r.Method == http.MethodPut && r.URL.Path == "/api/v1/customer/api/integrations":
 		var update map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 			w.WriteHeader(http.StatusBadRequest)

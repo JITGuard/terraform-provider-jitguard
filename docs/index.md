@@ -35,6 +35,12 @@ provider "jitguard" {
 
 Then run `terraform init`.
 
+The provider calls the versioned public API at `/api/v1/customer/api/...`.
+The unversioned `/api/customer/api/...` alias remains available until
+2027-10-25 but is deprecated; new clients and automation should use `/v1`.
+`endpoint` remains the origin (for example `https://app.jitguard.com` or a
+local test server), so custom endpoints continue to work unchanged.
+
 For a pre-release version or an offline install, use
 `scripts/download-provider.sh` from the provider repository. See the
 [local usage guide](https://github.com/JITGuard/terraform-provider-jitguard/blob/main/local-usage.md)

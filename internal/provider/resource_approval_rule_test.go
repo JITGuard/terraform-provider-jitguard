@@ -39,7 +39,7 @@ func (f *fakeRulesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	path := r.URL.Path
-	base := "/api/customer/api/rules"
+	base := "/api/v1/customer/api/rules"
 
 	switch {
 	case r.Method == http.MethodPost && path == base:
