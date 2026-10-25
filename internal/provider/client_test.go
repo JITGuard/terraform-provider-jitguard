@@ -46,7 +46,7 @@ func TestClient_GetRule(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if r.URL.Path != "/api/customer/api/rules/rule-1" {
+		if r.URL.Path != "/api/v1/customer/api/rules/rule-1" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -134,7 +134,7 @@ func TestClient_CreateRule(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if r.URL.Path != "/api/customer/api/rules" {
+		if r.URL.Path != "/api/v1/customer/api/rules" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -244,7 +244,7 @@ func TestClient_DeleteRule_NotFound(t *testing.T) {
 
 func TestClient_GetSettings(t *testing.T) {
 	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/customer/api/settings" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/customer/api/settings" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -287,7 +287,7 @@ func TestClient_GetSettings_NotFound(t *testing.T) {
 func TestClient_UpdateSettings_PartialBody(t *testing.T) {
 	var body map[string]any
 	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/api/customer/api/settings" {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/customer/api/settings" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
@@ -311,7 +311,7 @@ func TestClient_UpdateSettings_PartialBody(t *testing.T) {
 
 func TestClient_GetIntegrations(t *testing.T) {
 	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/customer/api/integrations" {
+		if r.URL.Path != "/api/v1/customer/api/integrations" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -336,7 +336,7 @@ func TestClient_GetIntegrations(t *testing.T) {
 func TestClient_SetPagerDutyIntegration(t *testing.T) {
 	var body map[string]any
 	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/api/customer/api/integrations" {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/customer/api/integrations" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}

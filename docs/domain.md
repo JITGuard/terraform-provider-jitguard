@@ -97,11 +97,13 @@ The provider follows the standard Terraform plugin lifecycle:
 
 ### Machine API path
 
-The provider appends one of three API-key machine paths to the configured endpoint:
+The provider appends one of three versioned API-key machine paths to the configured endpoint:
 
-- `/api/customer/api/rules` — approval-rule CRUDL
-- `/api/customer/api/settings` — organization settings and AWS connection facts
-- `/api/customer/api/integrations` — Slack/PagerDuty status and PagerDuty writes
+- `/api/v1/customer/api/rules` — approval-rule CRUDL
+- `/api/v1/customer/api/settings` — organization settings and AWS connection facts
+- `/api/v1/customer/api/integrations` — Slack/PagerDuty status and PagerDuty writes
+
+The `/v1` prefix is a public alias served by the web CloudFront distribution, which rewrites `/api/v1/customer/<rest>` to the legacy gateway route `/api/customer/<rest>` before forwarding to API Gateway (#1544). Both path sets therefore reach the same handler with identical semantics. The legacy paths remain available until 2027-10-25 and carry `Deprecation`, `Sunset`, and `Link` response headers; new clients use `/v1`.
 
 The `api` segment is the API Gateway stage name; `/customer/api/...` is the gateway route. These paths are distinct from the web UI's `/customer/...` routes (which use JWT authentication), keeping the two auth models separate and testable. `customer-settings-api` and `comms-config-api` are separate Lambdas from the JWT handlers, each validating the API key itself.
 
@@ -230,9 +232,9 @@ The API client layer provides:
 
 ### Downstream (what this calls)
 
-- **customer-rules-api lambda** — `/api/customer/api/rules`, API-key authenticated CRUDL for approval rules.
-- **customer-settings-api lambda** — `/api/customer/api/settings`, API-key authenticated settings read/write.
-- **comms-config-api lambda** — `/api/customer/api/integrations`, API-key authenticated Slack/PagerDuty status and PagerDuty writes.
+- **customer-rules-api lambda** — gateway route `/api/customer/api/rules` (public `/api/v1/customer/api/rules`), API-key authenticated CRUDL for approval rules.
+- **customer-settings-api lambda** — gateway route `/api/customer/api/settings` (public `/api/v1/customer/api/settings`), API-key authenticated settings read/write.
+- **comms-config-api lambda** — gateway route `/api/customer/api/integrations` (public `/api/v1/customer/api/integrations`), API-key authenticated Slack/PagerDuty status and PagerDuty writes.
 - **DynamoDB main table** — the machine APIs read/write `RULE#`, settings and integration records; the provider never touches DynamoDB directly
 - **DynamoDB customer_audit table** — all machine mutations are audited by the owning Lambda with an `actorType: 'service'` shape
 

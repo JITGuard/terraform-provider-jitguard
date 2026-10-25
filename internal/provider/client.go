@@ -14,12 +14,16 @@ import (
 )
 
 const (
-	// rulesPath is the machine API path (ADR-0015 / #523). The endpoint
+	// machineAPIPrefix is the versioned public API prefix (#1544). The endpoint
 	// configured on the provider is the API base URL, e.g.
-	// https://jitguard.example.com — the client appends this path. The
-	// gateway route is /customer/api/rules; the "api" prefix here is the
-	// gateway stage name, so the public URL is /api/customer/api/rules.
-	rulesPath = "/api/customer/api/rules"
+	// https://jitguard.example.com — the client appends this path. CloudFront
+	// rewrites /api/v1/customer/<rest> to the legacy gateway route
+	// /api/customer/<rest>, so both aliases reach the same handler. The legacy
+	// alias remains available until 2027-10-25.
+	machineAPIPrefix = "/api/v1/customer/api"
+
+	// rulesPath is the machine API rule CRUDL path (ADR-0015 / #523).
+	rulesPath = machineAPIPrefix + "/rules"
 
 	defaultRequestTimeout = 30 * time.Second
 )
@@ -315,8 +319,8 @@ func (c *Client) DeleteRule(ctx context.Context, ruleID, ifMatch string) (bool, 
 }
 
 const (
-	settingsPath     = "/api/customer/api/settings"
-	integrationsPath = "/api/customer/api/integrations"
+	settingsPath     = machineAPIPrefix + "/settings"
+	integrationsPath = machineAPIPrefix + "/integrations"
 )
 
 // Settings is the machine API settings response. It includes the AWS
