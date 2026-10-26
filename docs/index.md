@@ -46,6 +46,16 @@ For a pre-release version or an offline install, use
 [local usage guide](https://github.com/JITGuard/terraform-provider-jitguard/blob/main/local-usage.md)
 for the walkthrough.
 
+## Versioning and releases
+
+The provider follows [Semantic Versioning](https://semver.org/): patch
+releases for fixes, minor releases for new resources and attributes, and major
+releases for breaking changes. Deprecations are announced at least one minor
+release before removal. The [changelog](guides/changelog.md) lists every
+versioned, dated release together with the provider and API deprecation policy.
+The complete generated notes and signed artifacts are on
+[GitHub Releases](https://github.com/JITGuard/terraform-provider-jitguard/releases).
+
 ## Reference
 
 - [jitguard_approval_rule](resources/approval_rule.md) — manage an approval
