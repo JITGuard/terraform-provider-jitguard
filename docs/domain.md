@@ -92,7 +92,7 @@ The provider follows the standard Terraform plugin lifecycle:
 1. **Init** — Terraform fetches the provider binary (from the filesystem mirror), starts the plugin process, and negotiates the protocol version.
 2. **Configure** — Terraform reads the provider block (`endpoint`, `api_key`, `skip_verify`), resolves the API key from config or environment variable, and constructs the shared HTTP client.
 3. **Plan** — For each resource/data source, the provider reads the current remote state (GET from the machine API) and compares it to the desired state in HCL. Cross-attribute validation runs before any API call.
-4. **Apply** — Creates, updates, or deletes resources via the machine API. Updates use full replacement with `If-Match` optimistic concurrency.
+4. **Apply** — Creates, updates, or deletes resources via the machine API. Updates use full replacement with `If-Match` optimistic concurrency. Approval-rule create and update requests carry a deterministic `Idempotency-Key`; transient 429/5xx failures retry with the same key, so a response lost after the server committed is replayed rather than duplicated.
 5. **Refresh** — Periodically re-reads remote state to detect drift from external changes.
 
 ### Machine API path
