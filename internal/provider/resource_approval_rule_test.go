@@ -13,19 +13,35 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 // fakeRulesAPI is an in-memory approximation of the machine API used by the
 // framework tests. It stores rules keyed by ruleId and implements the
-// If-Match/ETag semantics the provider relies on.
+// If-Match/ETag semantics and Idempotency-Key replay the provider relies on.
 type fakeRulesAPI struct {
-	mu     sync.Mutex
-	rules  map[string]Rule
-	nextID int
+	mu              sync.Mutex
+	rules           map[string]Rule
+	nextID          int
+	idempotent      map[string]fakeResponse
+	createRequests  int
+	createKeys      []string
+	updateKeys      []string
+	failFirstCreate bool
+}
+
+// fakeResponse is a stored IDempotency-Key response, replayed on retry.
+type fakeResponse struct {
+	status int
+	body   []byte
+	etag   string
 }
 
 func newFakeRulesAPI() *fakeRulesAPI {
-	return &fakeRulesAPI{rules: map[string]Rule{}}
+	return &fakeRulesAPI{
+		rules:      map[string]Rule{},
+		idempotent: map[string]fakeResponse{},
+	}
 }
 
 func (f *fakeRulesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,6 +59,19 @@ func (f *fakeRulesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == http.MethodPost && path == base:
+		key := r.Header.Get(idempotencyKeyHeader)
+		f.createRequests++
+		f.createKeys = append(f.createKeys, key)
+
+		if stored, ok := f.idempotent[key]; ok {
+			if stored.etag != "" {
+				w.Header().Set("ETag", stored.etag)
+			}
+			w.WriteHeader(stored.status)
+			w.Write(stored.body)
+			return
+		}
+
 		var rule Rule
 		if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -57,9 +86,24 @@ func (f *fakeRulesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rule.UpdatedAt = rule.CreatedAt
 		}
 		f.rules[rule.RuleID] = rule
-		w.Header().Set("ETag", fmt.Sprintf(`"%s"`, rule.UpdatedAt))
+		etag := fmt.Sprintf(`"%s"`, rule.UpdatedAt)
+		stored, err := json.Marshal(rule)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		f.idempotent[key] = fakeResponse{status: http.StatusCreated, body: stored, etag: etag}
+
+		if f.failFirstCreate && f.createRequests == 1 {
+			// Commit succeeded, but the client sees an ambiguous failure. A
+			// retry with the same key above must replay the stored response.
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Internal Server Error"})
+			return
+		}
+		w.Header().Set("ETag", etag)
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(rule)
+		w.Write(stored)
 
 	case r.Method == http.MethodGet && path == base:
 		items := make([]Rule, 0, len(f.rules))
@@ -79,6 +123,7 @@ func (f *fakeRulesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(rule)
 
 	case r.Method == http.MethodPut && strings.HasPrefix(path, base+"/"):
+		f.updateKeys = append(f.updateKeys, r.Header.Get(idempotencyKeyHeader))
 		id := strings.TrimPrefix(path, base+"/")
 		existing, ok := f.rules[id]
 		if !ok {
@@ -197,6 +242,19 @@ resource "jitguard_approval_rule" "sre" {
 					resource.TestCheckResourceAttr("jitguard_approval_rule.sre", "description", "updated"),
 					resource.TestCheckResourceAttr("jitguard_approval_rule.sre", "auto_approve", "false"),
 					resource.TestCheckResourceAttr("jitguard_approval_rule.sre", "accounts.0.account_id", "222222222222"),
+					func(_ *terraform.State) error {
+						fake.mu.Lock()
+						defer fake.mu.Unlock()
+						if len(fake.updateKeys) == 0 {
+							return fmt.Errorf("expected an update request")
+						}
+						for _, key := range fake.updateKeys {
+							if !strings.HasPrefix(key, "tf-") {
+								return fmt.Errorf("update sent missing/invalid Idempotency-Key %q", key)
+							}
+						}
+						return nil
+					},
 				),
 			},
 			{
@@ -212,6 +270,60 @@ resource "jitguard_approval_rule" "sre" {
 data "jitguard_approval_rules" "all" {}
 `,
 				Check: resource.TestCheckResourceAttr("data.jitguard_approval_rules.all", "rules.#", "1"),
+			},
+		},
+	})
+}
+
+func TestApprovalRuleResource_IdempotentCreateReplay(t *testing.T) {
+	fake := newFakeRulesAPI()
+	fake.failFirstCreate = true
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+	cfg := providerConfig(srv.URL)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: cfg + `
+resource "jitguard_approval_rule" "replayed" {
+  name          = "Idempotent create"
+  auto_approve  = true
+  sso_group_ids = ["grp-sre"]
+  accounts {
+    type       = "account_id"
+    account_id = "111111111111"
+  }
+  permission_sets {
+    type = "permission_set_arn"
+    arn  = "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-22222222222222222222222222222222"
+  }
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("jitguard_approval_rule.replayed", "name", "Idempotent create"),
+					func(_ *terraform.State) error {
+						fake.mu.Lock()
+						defer fake.mu.Unlock()
+						if fake.createRequests != 2 {
+							return fmt.Errorf("expected an initial create plus one retry, got %d requests", fake.createRequests)
+						}
+						if len(fake.rules) != 1 {
+							return fmt.Errorf("expected one rule after replay, got %d", len(fake.rules))
+						}
+						if len(fake.idempotent) != 1 {
+							return fmt.Errorf("expected one stored idempotency response, got %d", len(fake.idempotent))
+						}
+						if len(fake.createKeys) != 2 || fake.createKeys[0] == "" || fake.createKeys[0] != fake.createKeys[1] {
+							return fmt.Errorf("expected both attempts to reuse one key, got %q", fake.createKeys)
+						}
+						if !strings.HasPrefix(fake.createKeys[0], "tf-") {
+							return fmt.Errorf("invalid Idempotency-Key %q", fake.createKeys[0])
+						}
+						return nil
+					},
+				),
 			},
 		},
 	})

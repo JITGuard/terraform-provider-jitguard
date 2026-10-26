@@ -3,7 +3,9 @@ package provider
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +26,16 @@ const (
 
 	// rulesPath is the machine API rule CRUDL path (ADR-0015 / #523).
 	rulesPath = machineAPIPrefix + "/rules"
+
+	// idempotencyKeyHeader is the request header the machine API uses to
+	// replay safe retries of mutating requests (#1550 / #1573).
+	idempotencyKeyHeader = "Idempotency-Key"
+
+	// ruleWriteAttempts bounds transient retries for approval-rule create and
+	// update. Every attempt reuses the same idempotency key and body, so a
+	// response lost after the server committed is replayed rather than
+	// applied twice.
+	ruleWriteAttempts = 3
 
 	defaultRequestTimeout = 30 * time.Second
 )
@@ -118,56 +130,158 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("jitguard API %d (%s): %s", e.StatusCode, e.ErrorCode, msg)
 }
 
-// request performs an authenticated JSON request and decodes the response.
-// okStatuses are the acceptable status codes for this call.
-func (c *Client) request(ctx context.Context, method, path string, body any, okStatuses []int) (*http.Response, []byte, error) {
+// newRequest builds an authenticated request from an already-serialized body.
+// Serializing before the retry loop keeps every attempt byte-identical, which
+// the API's idempotency fingerprint requires.
+func (c *Client) newRequest(ctx context.Context, method, path string, body []byte, headers map[string]string) (*http.Request, error) {
 	var reqBody io.Reader
 	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal request body: %w", err)
-		}
-		reqBody = bytes.NewReader(raw)
+		reqBody = bytes.NewReader(body)
 	}
-
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	if c.userAgent != "" {
 		req.Header.Set("User-Agent", c.userAgent)
 	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	return req, nil
+}
 
+// do performs one request and reads the response body.
+func (c *Client) do(req *http.Request) (*http.Response, []byte, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s %s: %w", method, path, err)
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
-
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read response body: %w", err)
 	}
+	return resp, respBody, nil
+}
 
-	statusOK := false
+func statusOK(status int, okStatuses []int) bool {
 	for _, s := range okStatuses {
-		if resp.StatusCode == s {
-			statusOK = true
-			break
+		if status == s {
+			return true
 		}
 	}
-	if !statusOK {
-		apiErr := &APIError{StatusCode: resp.StatusCode}
-		// Try to decode the structured error; fall back to raw body.
-		if jsonErr := json.Unmarshal(respBody, apiErr); jsonErr != nil || apiErr.ErrorCode == "" {
-			apiErr.ErrorCode = http.StatusText(resp.StatusCode)
-			apiErr.Message = strings.TrimSpace(string(respBody))
+	return false
+}
+
+// apiError decodes the machine API error shape, falling back to the raw body.
+func apiError(resp *http.Response, respBody []byte) *APIError {
+	apiErr := &APIError{StatusCode: resp.StatusCode}
+	if jsonErr := json.Unmarshal(respBody, apiErr); jsonErr != nil || apiErr.ErrorCode == "" {
+		apiErr.ErrorCode = http.StatusText(resp.StatusCode)
+		apiErr.Message = strings.TrimSpace(string(respBody))
+	}
+	return apiErr
+}
+
+// request performs an authenticated JSON request and decodes the response.
+// okStatuses are the acceptable status codes for this call.
+func (c *Client) request(ctx context.Context, method, path string, body any, okStatuses []int) (*http.Response, []byte, error) {
+	var raw []byte
+	if body != nil {
+		var err error
+		raw, err = json.Marshal(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshal request body: %w", err)
 		}
-		return resp, respBody, apiErr
+	}
+
+	req, err := c.newRequest(ctx, method, path, raw, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	resp, respBody, err := c.do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s %s: %w", method, path, err)
+	}
+	if !statusOK(resp.StatusCode, okStatuses) {
+		return resp, respBody, apiError(resp, respBody)
 	}
 	return resp, respBody, nil
+}
+
+// ruleWriteRequest sends a mutating approval-rule request with an
+// Idempotency-Key. Transient transport failures, 429s, and 5xx responses are
+// retried with the same key and body. Any HTTP response (including a
+// non-retryable error) is returned to the caller for status-specific handling.
+func (c *Client) ruleWriteRequest(ctx context.Context, method, path string, body []byte, headers map[string]string, key string) (*http.Response, []byte, error) {
+	merged := make(map[string]string, len(headers)+1)
+	for name, value := range headers {
+		merged[name] = value
+	}
+	merged[idempotencyKeyHeader] = key
+
+	var lastErr error
+	for attempt := 1; attempt <= ruleWriteAttempts; attempt++ {
+		req, err := c.newRequest(ctx, method, path, body, merged)
+		if err != nil {
+			return nil, nil, err
+		}
+		resp, respBody, err := c.do(req)
+		if err == nil {
+			// Return successes immediately; retry only transient statuses.
+			if !retryableStatus(resp.StatusCode) || attempt == ruleWriteAttempts {
+				return resp, respBody, nil
+			}
+		} else {
+			lastErr = fmt.Errorf("%s %s: %w", method, path, err)
+			if attempt == ruleWriteAttempts {
+				break
+			}
+		}
+
+		if waitErr := waitForRetry(ctx, attempt); waitErr != nil {
+			return nil, nil, waitErr
+		}
+	}
+	return nil, nil, lastErr
+}
+
+func retryableStatus(status int) bool {
+	switch status {
+	case http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func waitForRetry(ctx context.Context, attempt int) error {
+	timer := time.NewTimer(time.Duration(attempt) * 100 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// ruleIdempotencyKey derives a stable key for one logical rule operation. The
+// key is a hash of the operation and the exact request bytes, so retries (and
+// Terraform re-invocations for the same plan) reuse it, while a different body
+// or ETag produces a different key.
+func ruleIdempotencyKey(operation string, parts ...string) string {
+	h := sha256.New()
+	h.Write([]byte("jitguard-terraform-provider/v1"))
+	for _, part := range append([]string{operation}, parts...) {
+		h.Write([]byte{0})
+		h.Write([]byte(part))
+	}
+	return "tf-" + hex.EncodeToString(h.Sum(nil))
 }
 
 // GetRule fetches a single rule. Returns (nil, nil) when not found.
@@ -214,13 +328,25 @@ func (c *Client) ListRules(ctx context.Context) ([]Rule, error) {
 }
 
 // CreateRule POSTs a full rule and returns the stored rule with its ruleId.
+// The request carries a deterministic Idempotency-Key so a retry after an
+// ambiguous failure replays the original create instead of duplicating it.
 func (c *Client) CreateRule(ctx context.Context, rule *Rule) (*Rule, error) {
-	resp, body, err := c.request(ctx, http.MethodPost, rulesPath, rule, []int{http.StatusCreated, http.StatusOK})
+	body, err := json.Marshal(rule)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request body: %w", err)
+	}
+	key := ruleIdempotencyKey("create", string(body))
+
+	resp, respBody, err := c.ruleWriteRequest(ctx, http.MethodPost, rulesPath, body, nil, key)
 	if err != nil {
 		return nil, err
 	}
+	if !statusOK(resp.StatusCode, []int{http.StatusCreated, http.StatusOK}) {
+		return nil, apiError(resp, respBody)
+	}
+
 	var created Rule
-	if err := json.Unmarshal(body, &created); err != nil {
+	if err := json.Unmarshal(respBody, &created); err != nil {
 		return nil, fmt.Errorf("decode created rule: %w", err)
 	}
 	if created.RuleID == "" {
@@ -231,35 +357,25 @@ func (c *Client) CreateRule(ctx context.Context, rule *Rule) (*Rule, error) {
 }
 
 // UpdateRule PUTs a full replacement with optimistic concurrency. ifMatch is
-// the current quoted ETag (e.g. `"2026-08-01T00:00:00Z"`).
+// the current quoted ETag (e.g. `"2026-08-01T00:00:00Z"`). The idempotency key
+// binds the rule ID, ETag, and body, so a retry of the same update replays.
 func (c *Client) UpdateRule(ctx context.Context, ruleID, ifMatch string, rule *Rule) (*Rule, error) {
 	path := rulesPath + "/" + url.PathEscape(ruleID)
-	reqBody, err := json.Marshal(rule)
+	body, err := json.Marshal(rule)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request body: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("If-Match", ifMatch)
+	key := ruleIdempotencyKey("update", ruleID, ifMatch, string(body))
 
-	resp, err := c.http.Do(req)
+	resp, respBody, err := c.ruleWriteRequest(ctx, http.MethodPut, path, body, map[string]string{"If-Match": ifMatch}, key)
 	if err != nil {
-		return nil, fmt.Errorf("PUT %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response body: %w", err)
+		return nil, err
 	}
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var updated Rule
-		if err := json.Unmarshal(body, &updated); err != nil {
+		if err := json.Unmarshal(respBody, &updated); err != nil {
 			return nil, fmt.Errorf("decode updated rule: %w", err)
 		}
 		updated.ETag = resp.Header.Get("ETag")
@@ -271,12 +387,7 @@ func (c *Client) UpdateRule(ctx context.Context, ruleID, ifMatch string, rule *R
 	case http.StatusPreconditionRequired:
 		return nil, fmt.Errorf("rule %s requires an If-Match header (internal provider bug)", ruleID)
 	default:
-		apiErr := &APIError{StatusCode: resp.StatusCode}
-		if jsonErr := json.Unmarshal(body, apiErr); jsonErr != nil || apiErr.ErrorCode == "" {
-			apiErr.ErrorCode = http.StatusText(resp.StatusCode)
-			apiErr.Message = strings.TrimSpace(string(body))
-		}
-		return nil, apiErr
+		return nil, apiError(resp, respBody)
 	}
 }
 

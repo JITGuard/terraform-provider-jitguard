@@ -56,6 +56,13 @@ The unversioned `/api/customer/api/...` alias remains available until
 `endpoint` remains the origin (for example `https://app.jitguard.com` or a
 local test server), so custom endpoints continue to work unchanged.
 
+The provider follows [Semantic Versioning](https://semver.org/); breaking
+changes ship in a major release and deprecations are announced at least one
+minor release before removal. Every versioned, dated release is listed in the
+[changelog](docs/guides/changelog.md), which also documents the provider and
+public API deprecation policy (the legacy API alias reaches
+`Sunset: 2027-10-25`).
+
 ### Local/pre-release install
 
 Before a version is on the Registry, or for offline testing, install the
