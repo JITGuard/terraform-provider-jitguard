@@ -129,6 +129,7 @@ func TestClient_CreateRule(t *testing.T) {
 	created := rule
 	created.RuleID = "new-uuid"
 
+	var gotKey string
 	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -138,6 +139,7 @@ func TestClient_CreateRule(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		gotKey = r.Header.Get(idempotencyKeyHeader)
 		var body Rule
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("decode body: %v", err)
@@ -160,19 +162,102 @@ func TestClient_CreateRule(t *testing.T) {
 	if got.ETag != `"2026-08-01T00:00:00Z"` {
 		t.Fatalf("expected ETag header captured, got %q", got.ETag)
 	}
+	if !strings.HasPrefix(gotKey, "tf-") || len(gotKey) != len("tf-")+64 {
+		t.Fatalf("expected a tf-<sha256> Idempotency-Key, got %q", gotKey)
+	}
+}
+
+func TestClient_CreateRule_IdempotencyKeyStable(t *testing.T) {
+	rule := testRule()
+	var keys []string
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		keys = append(keys, r.Header.Get(idempotencyKeyHeader))
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(rule)
+	})
+
+	for i := 0; i < 2; i++ {
+		if _, err := client.CreateRule(context.Background(), &rule); err != nil {
+			t.Fatalf("CreateRule %d: %v", i, err)
+		}
+	}
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 create requests, got %d", len(keys))
+	}
+	if keys[0] == "" || keys[0] != keys[1] {
+		t.Fatalf("expected the same non-empty key for the same logical create, got %q and %q", keys[0], keys[1])
+	}
+}
+
+func TestClient_CreateRule_RetriesWithSameKeyAndReplays(t *testing.T) {
+	rule := testRule()
+	storedByKey := map[string][]byte{}
+	var keys []string
+	creates := 0
+
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get(idempotencyKeyHeader)
+		keys = append(keys, key)
+
+		// Replay the committed response for a repeated key, as the machine API
+		// does, instead of creating a second rule.
+		if stored, ok := storedByKey[key]; ok {
+			w.Header().Set("ETag", `"2026-08-01T00:00:00Z"`)
+			w.WriteHeader(http.StatusCreated)
+			w.Write(stored)
+			return
+		}
+
+		creates++
+		var body Rule
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		body.RuleID = "rule-1"
+		body.CreatedAt = "2026-08-01T00:00:00Z"
+		body.UpdatedAt = body.CreatedAt
+		stored, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal stored rule: %v", err)
+		}
+		storedByKey[key] = stored
+
+		// Simulate a failure after the server committed: the first attempt
+		// returns 500, so the provider must retry with the same key.
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal Server Error"})
+	})
+
+	got, err := client.CreateRule(context.Background(), &rule)
+	if err != nil {
+		t.Fatalf("CreateRule after retry: %v", err)
+	}
+	if got.RuleID != "rule-1" {
+		t.Fatalf("expected replayed rule-1, got %q", got.RuleID)
+	}
+	if creates != 1 {
+		t.Fatalf("expected exactly one logical create, got %d", creates)
+	}
+	if len(storedByKey) != 1 {
+		t.Fatalf("expected one stored response, got %d", len(storedByKey))
+	}
+	if len(keys) != 2 || keys[0] == "" || keys[0] != keys[1] {
+		t.Fatalf("expected two attempts with the same key, got %q", keys)
+	}
 }
 
 func TestClient_UpdateRule_IfMatchSent(t *testing.T) {
 	updated := testRule()
 	updated.UpdatedAt = "2026-08-02T00:00:00Z"
 
-	var gotIfMatch string
+	var gotIfMatch, gotKey string
 	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		gotIfMatch = r.Header.Get("If-Match")
+		gotKey = r.Header.Get(idempotencyKeyHeader)
 		w.Header().Set("ETag", `"2026-08-02T00:00:00Z"`)
 		json.NewEncoder(w).Encode(updated)
 	})
@@ -184,8 +269,43 @@ func TestClient_UpdateRule_IfMatchSent(t *testing.T) {
 	if gotIfMatch != `"2026-08-01T00:00:00Z"` {
 		t.Fatalf("expected If-Match header sent, got %q", gotIfMatch)
 	}
+	if !strings.HasPrefix(gotKey, "tf-") || len(gotKey) != len("tf-")+64 {
+		t.Fatalf("expected a tf-<sha256> Idempotency-Key, got %q", gotKey)
+	}
 	if got.UpdatedAt != "2026-08-02T00:00:00Z" {
 		t.Fatalf("unexpected updated rule: %+v", got)
+	}
+}
+
+func TestClient_UpdateRule_RetriesWithSameKey(t *testing.T) {
+	updated := testRule()
+	updated.UpdatedAt = "2026-08-02T00:00:00Z"
+	var keys []string
+	attempts := 0
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		keys = append(keys, r.Header.Get(idempotencyKeyHeader))
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Service Unavailable"})
+			return
+		}
+		w.Header().Set("ETag", `"2026-08-02T00:00:00Z"`)
+		json.NewEncoder(w).Encode(updated)
+	})
+
+	got, err := client.UpdateRule(context.Background(), "rule-1", `"2026-08-01T00:00:00Z"`, &updated)
+	if err != nil {
+		t.Fatalf("UpdateRule after retry: %v", err)
+	}
+	if got.UpdatedAt != "2026-08-02T00:00:00Z" {
+		t.Fatalf("unexpected updated rule: %+v", got)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempts)
+	}
+	if len(keys) != 2 || keys[0] == "" || keys[0] != keys[1] {
+		t.Fatalf("expected retry to reuse the key, got %q", keys)
 	}
 }
 

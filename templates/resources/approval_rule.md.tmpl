@@ -44,6 +44,9 @@ resource "jitguard_approval_rule" "sre_emergency" {
   required to be present or non-empty.
 - When `auto_approve = false`, `approver_group_ids` must be provided and
   non-empty. The provider validates this before making an API call.
+- Create and update requests carry a deterministic `Idempotency-Key`.
+  Transient 429/5xx failures are retried with the same key, so a response lost
+  after the server committed is replayed instead of creating a duplicate rule.
 - Account conditions match by AWS account ID (`account_id`), OU ID
   (`ou_id`), or tag; permission-set conditions match by SSO permission set
   ARN (`arn`, or `"*"` for any) or tag. `account_id`, `ou_id`, and `arn` are
