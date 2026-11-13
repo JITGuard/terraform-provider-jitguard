@@ -441,6 +441,7 @@ type Settings struct {
 	Name                string `json:"name"`
 	ApprovalExpiryHours int64  `json:"approvalExpiryHours"`
 	NotificationEmail   string `json:"notificationEmail"`
+	WarmGroupIdleDays   int64  `json:"warmGroupIdleDays"`
 	ConnectionStatus    string `json:"connectionStatus"`
 	ManagementAccountID string `json:"managementAccountId"`
 	SSORegion           string `json:"ssoRegion"`
@@ -456,6 +457,9 @@ type SettingsUpdate struct {
 	// integration alerts. An empty string resets it to the owner address
 	// (#1619).
 	NotificationEmail *string `json:"notificationEmail,omitempty"`
+	// WarmGroupIdleDays is how long an unused warm group is kept before the
+	// sweeper reclaims it. Whole days, 7-90, default 30 (#1607).
+	WarmGroupIdleDays *int64 `json:"warmGroupIdleDays,omitempty"`
 }
 
 // GetSettings fetches the customer settings. Returns (nil, nil) when the API

@@ -371,6 +371,7 @@ func TestClient_GetSettings(t *testing.T) {
 		json.NewEncoder(w).Encode(Settings{
 			Name:                "Acme",
 			ApprovalExpiryHours: 12,
+			WarmGroupIdleDays:   45,
 			ConnectionStatus:    "connected",
 			ManagementAccountID: "111111111111",
 			SSORegion:           "eu-west-1",
@@ -387,6 +388,9 @@ func TestClient_GetSettings(t *testing.T) {
 	}
 	if settings.Name != "Acme" || settings.ApprovalExpiryHours != 12 || settings.ConnectionStatus != "connected" {
 		t.Fatalf("unexpected settings: %+v", settings)
+	}
+	if settings.WarmGroupIdleDays != 45 {
+		t.Fatalf("WarmGroupIdleDays = %d, want 45", settings.WarmGroupIdleDays)
 	}
 }
 
@@ -426,6 +430,28 @@ func TestClient_UpdateSettings_PartialBody(t *testing.T) {
 	}
 	if _, ok := body["name"]; ok {
 		t.Fatalf("nil name must be omitted, got %#v", body)
+	}
+}
+
+func TestClient_UpdateSettings_WarmGroupIdleDays(t *testing.T) {
+	var body map[string]any
+	client, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/customer/api/settings" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		json.NewEncoder(w).Encode(Settings{Name: "Acme", WarmGroupIdleDays: 45})
+	})
+
+	days := int64(45)
+	if _, err := client.UpdateSettings(context.Background(), SettingsUpdate{WarmGroupIdleDays: &days}); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	if len(body) != 1 || body["warmGroupIdleDays"] != float64(45) {
+		t.Fatalf("expected only warmGroupIdleDays, got %#v", body)
 	}
 }
 

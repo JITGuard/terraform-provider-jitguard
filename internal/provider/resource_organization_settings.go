@@ -38,6 +38,7 @@ type organizationSettingsModel struct {
 	Name                types.String `tfsdk:"name"`
 	ApprovalExpiryHours types.Int64  `tfsdk:"approval_expiry_hours"`
 	NotificationEmail   types.String `tfsdk:"notification_email"`
+	WarmGroupIdleDays   types.Int64  `tfsdk:"warm_group_idle_days"`
 }
 
 // organizationSettingsModelV0 is the pre-#1391 shape. It exists only so the
@@ -58,9 +59,9 @@ func (r *organizationSettingsResource) Schema(_ context.Context, _ resource.Sche
 	resp.Schema = schema.Schema{
 		Version: 1,
 		Description: "The customer's JIT Guard organization settings: name, approval expiry " +
-			"window and the tenant-level notification address. This is a singleton resource; one " +
-			"per customer. Deleting it removes it from Terraform state but leaves the server " +
-			"settings unchanged.",
+			"window, the tenant-level notification address and the warm-group idle window. This " +
+			"is a singleton resource; one per customer. Deleting it removes it from Terraform " +
+			"state but leaves the server settings unchanged.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -92,6 +93,16 @@ func (r *organizationSettingsResource) Schema(_ context.Context, _ resource.Sche
 					stringvalidator.LengthAtLeast(1),
 					stringvalidator.LengthAtMost(254),
 					stringvalidator.RegexMatches(notificationEmailPattern, "must be a single valid email address"),
+				},
+			},
+			"warm_group_idle_days": schema.Int64Attribute{
+				Optional: true,
+				Computed: true,
+				Description: "Whole days an unused warm group is kept before the sweeper reclaims " +
+					"it (7-90). The server default is 30. A warm group still in use is never " +
+					"reclaimed, regardless of this window.",
+				Validators: []validator.Int64{
+					int64validator.Between(7, 90),
 				},
 			},
 		},
@@ -155,6 +166,10 @@ func (m organizationSettingsModel) updateFromConfig() SettingsUpdate {
 		value := m.NotificationEmail.ValueString()
 		update.NotificationEmail = &value
 	}
+	if !m.WarmGroupIdleDays.IsNull() && !m.WarmGroupIdleDays.IsUnknown() {
+		value := m.WarmGroupIdleDays.ValueInt64()
+		update.WarmGroupIdleDays = &value
+	}
 	return update
 }
 
@@ -173,6 +188,7 @@ func (r *organizationSettingsResource) refresh(ctx context.Context, state *organ
 	state.Name = nullIfEmpty(settings.Name)
 	state.ApprovalExpiryHours = types.Int64Value(settings.ApprovalExpiryHours)
 	state.NotificationEmail = nullIfEmpty(settings.NotificationEmail)
+	state.WarmGroupIdleDays = types.Int64Value(settings.WarmGroupIdleDays)
 }
 
 func (r *organizationSettingsResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -216,6 +232,7 @@ func (r *organizationSettingsResource) Read(ctx context.Context, req resource.Re
 	state.Name = nullIfEmpty(settings.Name)
 	state.ApprovalExpiryHours = types.Int64Value(settings.ApprovalExpiryHours)
 	state.NotificationEmail = nullIfEmpty(settings.NotificationEmail)
+	state.WarmGroupIdleDays = types.Int64Value(settings.WarmGroupIdleDays)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
