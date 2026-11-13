@@ -26,6 +26,7 @@ func newFakeConfigAPI() *fakeConfigAPI {
 			Name:                "Acme",
 			ApprovalExpiryHours: 8,
 			NotificationEmail:   "owner@acme.test",
+			WarmGroupIdleDays:   30,
 			ConnectionStatus:    "connected",
 			ManagementAccountID: "111111111111",
 			SSORegion:           "eu-west-1",
@@ -65,6 +66,9 @@ func (f *fakeConfigAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if update.NotificationEmail != nil {
 			f.settings.NotificationEmail = *update.NotificationEmail
+		}
+		if update.WarmGroupIdleDays != nil {
+			f.settings.WarmGroupIdleDays = *update.WarmGroupIdleDays
 		}
 		json.NewEncoder(w).Encode(f.settings)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/api/integrations":
@@ -108,6 +112,7 @@ resource "jitguard_organization_settings" "this" {
   name                  = "Acme Corp"
   approval_expiry_hours = 12
   notification_email    = "security@acme.test"
+  warm_group_idle_days  = 45
 }
 
 data "jitguard_aws_connection" "this" {}
@@ -119,6 +124,7 @@ data "jitguard_integrations" "this" {}
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "name", "Acme Corp"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "approval_expiry_hours", "12"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "notification_email", "security@acme.test"),
+					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "warm_group_idle_days", "45"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "connection_status", "connected"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "management_account_id", "111111111111"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "sso_region", "eu-west-1"),
@@ -133,12 +139,14 @@ resource "jitguard_organization_settings" "this" {
   name                  = "Acme Corp (updated)"
   approval_expiry_hours = 24
   notification_email    = "alerts@acme.test"
+  warm_group_idle_days  = 60
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "name", "Acme Corp (updated)"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "approval_expiry_hours", "24"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "notification_email", "alerts@acme.test"),
+					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "warm_group_idle_days", "60"),
 				),
 			},
 			{
@@ -167,6 +175,60 @@ resource "jitguard_organization_settings" "this" {
 }
 `,
 				ExpectError: regexp.MustCompile("valid email address"),
+			},
+		},
+	})
+}
+
+// The idle window is Optional+Computed: omitting it must read back the server
+// default (30) rather than plan a zero value (#1607, #1601).
+func TestOrganizationSettingsResource_WarmGroupIdleDaysDefaultsToServerValue(t *testing.T) {
+	fake := newFakeConfigAPI()
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+	cfg := providerConfig(srv.URL)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: cfg + `
+resource "jitguard_organization_settings" "this" {
+  name = "Acme"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "warm_group_idle_days", "30"),
+				),
+			},
+		},
+	})
+}
+
+func TestOrganizationSettingsResource_RejectsWarmGroupIdleDaysOutOfBounds(t *testing.T) {
+	fake := newFakeConfigAPI()
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+	cfg := providerConfig(srv.URL)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: cfg + `
+resource "jitguard_organization_settings" "this" {
+  warm_group_idle_days = 6
+}
+`,
+				ExpectError: regexp.MustCompile("between 7 and 90"),
+			},
+			{
+				Config: cfg + `
+resource "jitguard_organization_settings" "this" {
+  warm_group_idle_days = 91
+}
+`,
+				ExpectError: regexp.MustCompile("between 7 and 90"),
 			},
 		},
 	})

@@ -28,6 +28,16 @@ func TestOrganizationSettingsStateUpgradeFromV0(t *testing.T) {
 		t.Fatalf("schema version = %d, want 1", resourceSchema.Version)
 	}
 
+	// warm_group_idle_days is additive on schema version 1, so an upgrade from
+	// a v0 state must still decode and leave the new attribute null (#1607).
+	objectType, ok := resourceSchema.ValueType().(tftypes.Object)
+	if !ok {
+		t.Fatalf("resource value type = %T, want tftypes.Object", resourceSchema.ValueType())
+	}
+	if _, ok := objectType.AttributeTypes["warm_group_idle_days"]; !ok {
+		t.Fatal("schema is missing warm_group_idle_days")
+	}
+
 	// A state shape written by provider <= v0.3.x.
 	upgradeResp, err := server.UpgradeResourceState(context.Background(), &tfprotov6.UpgradeResourceStateRequest{
 		TypeName: "jitguard_organization_settings",
@@ -58,6 +68,14 @@ func TestOrganizationSettingsStateUpgradeFromV0(t *testing.T) {
 	}
 	if _, ok := attrs["default_permission_set_arn"]; ok {
 		t.Fatal("upgraded state still carries default_permission_set_arn")
+	}
+
+	idleDays, ok := attrs["warm_group_idle_days"]
+	if !ok {
+		t.Fatal("upgraded state is missing warm_group_idle_days")
+	}
+	if !idleDays.IsNull() {
+		t.Fatalf("warm_group_idle_days = %v, want null after upgrading a v0 state", idleDays)
 	}
 
 	var name string

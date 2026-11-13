@@ -8,9 +8,9 @@ description: |-
 # jitguard_organization_settings (Resource)
 
 Manages the singleton organization settings object: the display name, the
-approval expiry window and the tenant-level notification address. Permission
-sets are selected per promotion request and matched by
-`jitguard_approval_rule`, not configured here.
+approval expiry window, the tenant-level notification address and the
+warm-group idle window. Permission sets are selected per promotion request and
+matched by `jitguard_approval_rule`, not configured here.
 
 This is one resource per customer. Import it with the fixed ID `settings`.
 Deleting the resource removes it from Terraform state but leaves the server
@@ -23,6 +23,7 @@ resource "jitguard_organization_settings" "this" {
   name                  = "Acme Corp"
   approval_expiry_hours = 12
   notification_email    = "security@acme.example"
+  warm_group_idle_days  = 30
 }
 ```
 

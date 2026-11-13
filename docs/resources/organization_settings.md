@@ -8,9 +8,9 @@ description: |-
 # jitguard_organization_settings (Resource)
 
 Manages the singleton organization settings object: the display name, the
-approval expiry window and the tenant-level notification address. Permission
-sets are selected per promotion request and matched by
-`jitguard_approval_rule`, not configured here.
+approval expiry window, the tenant-level notification address and the
+warm-group idle window. Permission sets are selected per promotion request and
+matched by `jitguard_approval_rule`, not configured here.
 
 This is one resource per customer. Import it with the fixed ID `settings`.
 Deleting the resource removes it from Terraform state but leaves the server
@@ -23,6 +23,7 @@ resource "jitguard_organization_settings" "this" {
   name                  = "Acme Corp"
   approval_expiry_hours = 12
   notification_email    = "security@acme.example"
+  warm_group_idle_days  = 30
 }
 ```
 
@@ -36,6 +37,7 @@ Omit an attribute to leave the server value unchanged.
 - `approval_expiry_hours` (Number) Hours before an undecided approval request expires (1-720). The server default is 8.
 - `name` (String) Organization display name. Omit to leave the server value unchanged.
 - `notification_email` (String) One address for tenant-level security and integration alerts (policy-broken, Slack disconnected). The API defaults it to the owner address. Omit to leave the server value unchanged. Security mail cannot be muted.
+- `warm_group_idle_days` (Number) Whole days an unused warm group is kept before the sweeper reclaims it (7-90). The server default is 30. A warm group still in use is never reclaimed, regardless of this window.
 
 ### Read-Only
 
