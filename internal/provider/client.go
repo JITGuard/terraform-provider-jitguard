@@ -440,6 +440,7 @@ const (
 type Settings struct {
 	Name                string `json:"name"`
 	ApprovalExpiryHours int64  `json:"approvalExpiryHours"`
+	NotificationEmail   string `json:"notificationEmail"`
 	ConnectionStatus    string `json:"connectionStatus"`
 	ManagementAccountID string `json:"managementAccountId"`
 	SSORegion           string `json:"ssoRegion"`
@@ -451,6 +452,10 @@ type Settings struct {
 type SettingsUpdate struct {
 	Name                *string `json:"name,omitempty"`
 	ApprovalExpiryHours *int64  `json:"approvalExpiryHours,omitempty"`
+	// NotificationEmail is one address for tenant-level security and
+	// integration alerts. An empty string resets it to the owner address
+	// (#1619).
+	NotificationEmail *string `json:"notificationEmail,omitempty"`
 }
 
 // GetSettings fetches the customer settings. Returns (nil, nil) when the API
