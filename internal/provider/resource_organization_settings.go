@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -13,6 +14,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
+
+// One address, matching the settings API and the email contract (#1619).
+var notificationEmailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 var _ resource.Resource = (*organizationSettingsResource)(nil)
 var _ resource.ResourceWithImportState = (*organizationSettingsResource)(nil)
@@ -33,6 +37,7 @@ type organizationSettingsModel struct {
 	ID                  types.String `tfsdk:"id"`
 	Name                types.String `tfsdk:"name"`
 	ApprovalExpiryHours types.Int64  `tfsdk:"approval_expiry_hours"`
+	NotificationEmail   types.String `tfsdk:"notification_email"`
 }
 
 // organizationSettingsModelV0 is the pre-#1391 shape. It exists only so the
@@ -52,9 +57,10 @@ func (r *organizationSettingsResource) Metadata(_ context.Context, _ resource.Me
 func (r *organizationSettingsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Version: 1,
-		Description: "The customer's JIT Guard organization settings: name and approval expiry " +
-			"window. This is a singleton resource; one per customer. Deleting it removes it from " +
-			"Terraform state but leaves the server settings unchanged.",
+		Description: "The customer's JIT Guard organization settings: name, approval expiry " +
+			"window and the tenant-level notification address. This is a singleton resource; one " +
+			"per customer. Deleting it removes it from Terraform state but leaves the server " +
+			"settings unchanged.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -74,6 +80,18 @@ func (r *organizationSettingsResource) Schema(_ context.Context, _ resource.Sche
 				Description: "Hours before an undecided approval request expires (1-720). The server default is 8.",
 				Validators: []validator.Int64{
 					int64validator.Between(1, 720),
+				},
+			},
+			"notification_email": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Description: "One address for tenant-level security and integration alerts " +
+					"(policy-broken, Slack disconnected). The API defaults it to the owner " +
+					"address. Omit to leave the server value unchanged. Security mail cannot be muted.",
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+					stringvalidator.LengthAtMost(254),
+					stringvalidator.RegexMatches(notificationEmailPattern, "must be a single valid email address"),
 				},
 			},
 		},
@@ -133,6 +151,10 @@ func (m organizationSettingsModel) updateFromConfig() SettingsUpdate {
 		value := m.ApprovalExpiryHours.ValueInt64()
 		update.ApprovalExpiryHours = &value
 	}
+	if !m.NotificationEmail.IsNull() && !m.NotificationEmail.IsUnknown() {
+		value := m.NotificationEmail.ValueString()
+		update.NotificationEmail = &value
+	}
 	return update
 }
 
@@ -150,6 +172,7 @@ func (r *organizationSettingsResource) refresh(ctx context.Context, state *organ
 	state.ID = types.StringValue("settings")
 	state.Name = nullIfEmpty(settings.Name)
 	state.ApprovalExpiryHours = types.Int64Value(settings.ApprovalExpiryHours)
+	state.NotificationEmail = nullIfEmpty(settings.NotificationEmail)
 }
 
 func (r *organizationSettingsResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -192,6 +215,7 @@ func (r *organizationSettingsResource) Read(ctx context.Context, req resource.Re
 	state.ID = types.StringValue("settings")
 	state.Name = nullIfEmpty(settings.Name)
 	state.ApprovalExpiryHours = types.Int64Value(settings.ApprovalExpiryHours)
+	state.NotificationEmail = nullIfEmpty(settings.NotificationEmail)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

@@ -25,6 +25,7 @@ func newFakeConfigAPI() *fakeConfigAPI {
 		settings: Settings{
 			Name:                "Acme",
 			ApprovalExpiryHours: 8,
+			NotificationEmail:   "owner@acme.test",
 			ConnectionStatus:    "connected",
 			ManagementAccountID: "111111111111",
 			SSORegion:           "eu-west-1",
@@ -61,6 +62,9 @@ func (f *fakeConfigAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if update.ApprovalExpiryHours != nil {
 			f.settings.ApprovalExpiryHours = *update.ApprovalExpiryHours
+		}
+		if update.NotificationEmail != nil {
+			f.settings.NotificationEmail = *update.NotificationEmail
 		}
 		json.NewEncoder(w).Encode(f.settings)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/api/integrations":
@@ -103,6 +107,7 @@ func TestOrganizationSettingsResource(t *testing.T) {
 resource "jitguard_organization_settings" "this" {
   name                  = "Acme Corp"
   approval_expiry_hours = 12
+  notification_email    = "security@acme.test"
 }
 
 data "jitguard_aws_connection" "this" {}
@@ -113,6 +118,7 @@ data "jitguard_integrations" "this" {}
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "id", "settings"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "name", "Acme Corp"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "approval_expiry_hours", "12"),
+					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "notification_email", "security@acme.test"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "connection_status", "connected"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "management_account_id", "111111111111"),
 					resource.TestCheckResourceAttr("data.jitguard_aws_connection.this", "sso_region", "eu-west-1"),
@@ -126,11 +132,13 @@ data "jitguard_integrations" "this" {}
 resource "jitguard_organization_settings" "this" {
   name                  = "Acme Corp (updated)"
   approval_expiry_hours = 24
+  notification_email    = "alerts@acme.test"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "name", "Acme Corp (updated)"),
 					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "approval_expiry_hours", "24"),
+					resource.TestCheckResourceAttr("jitguard_organization_settings.this", "notification_email", "alerts@acme.test"),
 				),
 			},
 			{
@@ -138,6 +146,27 @@ resource "jitguard_organization_settings" "this" {
 				ImportState:       true,
 				ImportStateId:     "settings",
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestOrganizationSettingsResource_RejectsMalformedNotificationEmail(t *testing.T) {
+	fake := newFakeConfigAPI()
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+	cfg := providerConfig(srv.URL)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: cfg + `
+resource "jitguard_organization_settings" "this" {
+  notification_email = "not-an-address"
+}
+`,
+				ExpectError: regexp.MustCompile("valid email address"),
 			},
 		},
 	})
